@@ -1,0 +1,250 @@
+<!DOCTYPE html><html class="dark" lang="en"><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Claude Code Session Viewer</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&amp;family=Geist:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet">
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-fixed": "#d8e2ff",
+                    "surface-dim": "#10131a",
+                    "surface-variant": "#32353c",
+                    "primary-fixed-dim": "#adc6ff",
+                    "surface-tint": "#adc6ff",
+                    "surface-container-lowest": "#0b0e15",
+                    "surface": "#171717",
+                    "on-primary-fixed": "#001a42",
+                    "on-secondary-fixed-variant": "#005236",
+                    "background": "#0A0A0A",
+                    "on-tertiary": "#502400",
+                    "on-tertiary-fixed-variant": "#723600",
+                    "outline": "#8c909f",
+                    "surface-container-low": "#191b23",
+                    "on-error-container": "#ffdad6",
+                    "on-error": "#690005",
+                    "outline-variant": "#424754",
+                    "secondary-container": "#00a572",
+                    "error": "#ffb4ab",
+                    "on-secondary": "#003824",
+                    "on-surface": "#e1e2ec",
+                    "surface-container": "#1d2027",
+                    "secondary-fixed": "#6ffbbe",
+                    "surface-bright": "#363941",
+                    "inverse-primary": "#005ac2",
+                    "on-secondary-fixed": "#002113",
+                    "border": "#262626",
+                    "surface-container-high": "#272a31",
+                    "error-container": "#93000a",
+                    "indigo-accent": "#6366F1",
+                    "primary": "#adc6ff",
+                    "on-background": "#e1e2ec",
+                    "inverse-surface": "#e1e2ec",
+                    "tertiary": "#ffb786",
+                    "surface-container-highest": "#32353c",
+                    "secondary": "#4edea3",
+                    "inverse-on-surface": "#2e3038",
+                    "muted": "#737373",
+                    "primary-container": "#4d8eff",
+                    "on-secondary-container": "#00311f",
+                    "on-surface-variant": "#c2c6d6",
+                    "on-tertiary-container": "#461f00",
+                    "on-primary": "#002e6a",
+                    "tertiary-fixed-dim": "#ffb786",
+                    "on-primary-fixed-variant": "#004395",
+                    "on-primary-container": "#00285d",
+                    "tertiary-container": "#df7412",
+                    "on-tertiary-fixed": "#311400",
+                    "tertiary-fixed": "#ffdcc6",
+                    "secondary-fixed-dim": "#4edea3"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.125rem",
+                    "lg": "0.25rem",
+                    "xl": "0.5rem",
+                    "full": "0.75rem"
+            },
+            "spacing": {
+                    "margin-mobile": "16px",
+                    "margin-desktop": "40px",
+                    "unit": "4px",
+                    "container-max": "1280px",
+                    "gutter": "24px"
+            },
+            "fontFamily": {
+                    "headline-lg-mobile": ["Space Grotesk"],
+                    "body-sm": ["Geist"],
+                    "body-md": ["Geist"],
+                    "headline-xl": ["Space Grotesk"],
+                    "headline-lg": ["Space Grotesk"],
+                    "label-caps": ["Geist"],
+                    "label-code": ["JetBrains Mono"]
+            },
+            "fontSize": {
+                    "headline-lg-mobile": ["24px", { "lineHeight": "1.2", "fontWeight": "600" }],
+                    "body-sm": ["14px", { "lineHeight": "1.5", "fontWeight": "400" }],
+                    "body-md": ["16px", { "lineHeight": "1.6", "fontWeight": "400" }],
+                    "headline-xl": ["48px", { "lineHeight": "1.1", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                    "headline-lg": ["32px", { "lineHeight": "1.2", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                    "label-caps": ["12px", { "lineHeight": "1", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                    "label-code": ["13px", { "lineHeight": "1.4", "fontWeight": "500" }]
+            }
+          }
+        }
+      }
+    </script>
+<style>
+        body { font-family: 'Geist', sans-serif; }
+    </style>
+</head>
+<body class="bg-background text-on-background min-h-screen flex flex-col overflow-hidden">
+<!-- TopAppBar -->
+<header class="bg-background border-b border-border flex justify-between items-center w-full px-margin-desktop h-16 z-50 fixed top-0 left-0">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">terminal</span>
+<span class="font-headline-lg text-headline-lg font-bold text-on-background">Claude Code Session</span>
+</div>
+<div class="h-6 w-px bg-border mx-2"></div>
+<div class="flex flex-col">
+<span class="font-label-caps text-label-caps text-on-surface-variant">Implement Connect4 Rules Engine</span>
+<div class="flex items-center gap-3 font-label-code text-label-code text-muted mt-1">
+<span class="">Oct 24</span>
+<span class="">•</span>
+<span class="">12m</span>
+<span class="">•</span>
+<span class="">24 Msgs</span>
+<span class="">•</span>
+<span class="">15.4k Tokens</span>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<button class="p-2 hover:bg-surface-container transition-colors duration-150 rounded text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">contrast</span>
+</button>
+<button class="p-2 hover:bg-surface-container transition-colors duration-150 rounded text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="p-2 hover:bg-surface-container transition-colors duration-150 rounded text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</header>
+<div class="flex flex-1 pt-16 h-screen">
+<!-- SideNavBar -->
+<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] z-40 flex flex-col w-[280px] bg-[#161616] border-r border-[#262626]"><div class="p-4 flex flex-col gap-4 border-b border-[#262626]"><div class="flex flex-col gap-2"><div class="flex items-center bg-[#1E1E1E] rounded-full px-3 py-1.5"><span class="material-symbols-outlined text-[16px] text-[#525252] mr-2">search</span><input type="text" placeholder="Search session..." class="bg-transparent border-none outline-none text-[13px] text-on-surface w-full p-0 focus:ring-0 placeholder:text-[#525252]"></div><span class="text-[11px] text-[#8B8B8B] px-3">3 results</span></div><div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1"><div class="flex items-center gap-1 px-3 py-1 rounded-full bg-[#f59e0b26] text-[#F59E0B] text-[12px] whitespace-nowrap cursor-pointer"><span class="material-symbols-outlined text-[14px]">person</span><span class="">User</span></div><div class="flex items-center gap-1 px-3 py-1 rounded-full bg-[#1E1E1E] text-[#8B8B8B] text-[12px] whitespace-nowrap cursor-pointer"><span class="material-symbols-outlined text-[14px]">smart_toy</span><span class="">Assistant</span></div><div class="flex items-center gap-1 px-3 py-1 rounded-full bg-[#1E1E1E] text-[#8B8B8B] text-[12px] whitespace-nowrap cursor-pointer"><span class="material-symbols-outlined text-[14px]">terminal</span><span class="">Bash</span></div><div class="flex items-center gap-1 px-3 py-1 rounded-full bg-[#1E1E1E] text-[#8B8B8B] text-[12px] whitespace-nowrap cursor-pointer"><span class="material-symbols-outlined text-[14px]">menu_book</span><span class="">Read</span></div></div></div><nav class="flex-1 overflow-y-auto py-2"><div class="flex items-center justify-between px-4 py-2 bg-[#1E1E1E] border-l-2 border-[#F59E0B] cursor-pointer"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-tertiary"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">person</span><span class="text-[13px] text-white truncate max-w-[140px]">use the /build command...</span></div><span class="text-[11px] text-[#8B8B8B]">15:08</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-indigo-accent"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">psychology</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">Analyzing build...</span></div><span class="text-[11px] text-[#8B8B8B]">15:08</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-secondary"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">terminal</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">npm test</span></div><span class="text-[11px] text-[#8B8B8B]">15:09</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-primary"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">smart_toy</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">I will run the build...</span></div><span class="text-[11px] text-[#8B8B8B]">15:10</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-muted"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">edit_document</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">rules.test.ts</span></div><span class="text-[11px] text-[#8B8B8B]">15:11</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-muted"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">menu_book</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">rules.ts</span></div><span class="text-[11px] text-[#8B8B8B]">15:11</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-muted"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">description</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">new_test.ts</span></div><span class="text-[11px] text-[#8B8B8B]">15:12</span></div><div class="flex items-center justify-between px-4 py-2 hover:bg-[#1E1E1E] cursor-pointer group"><div class="flex items-center gap-3"><div class="w-1 h-1 rounded-full bg-secondary"></div><span class="material-symbols-outlined text-[18px] text-[#8B8B8B]">terminal</span><span class="text-[13px] text-[#8B8B8B] group-hover:text-on-surface">npm start</span></div><span class="text-[11px] text-[#8B8B8B]">15:13</span></div></nav><div class="p-4 border-t border-[#262626]"><button class="w-full py-2 bg-primary text-on-primary font-label-caps text-label-caps rounded hover:opacity-90 transition-opacity">New Session</button></div></aside>
+<!-- Main Content Canvas -->
+<main class="flex-1 ml-64 overflow-y-auto p-margin-desktop bg-background flex flex-col gap-6">
+<!-- Filters -->
+<div class="flex items-center gap-2 pb-4 border-b border-border">
+<div class="flex items-center bg-surface border border-border rounded-full px-3 py-1.5 focus-within:border-primary">
+<span class="material-symbols-outlined text-muted text-[16px] mr-2">search</span>
+<input class="bg-transparent border-none outline-none font-label-code text-label-code text-on-surface w-48 p-0 focus:ring-0" placeholder="Search session..." type="text">
+</div>
+<div class="h-4 w-px bg-border mx-2"></div>
+<div class="flex flex-wrap gap-2">
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">User</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Assistant</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Bash</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Read</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Write</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Edit</span>
+<span class="px-3 py-1 rounded bg-surface-container border border-border font-label-code text-label-code text-on-surface-variant hover:bg-surface-container-high cursor-pointer">Thinking</span>
+</div>
+</div>
+<!-- Timeline -->
+<div class="flex flex-col gap-6 max-w-[800px] w-full mx-auto pb-12 pt-4">
+<!-- User Message -->
+<div class="flex flex-col border border-border bg-surface rounded">
+<div class="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-container-low">
+<div class="w-2 h-2 rounded-full bg-tertiary"></div>
+<span class="font-label-caps text-label-caps text-tertiary">User</span>
+</div>
+<div class="p-4 font-body-md text-body-md text-on-surface">
+                        use the /build command to compile the project
+                    </div>
+</div>
+<!-- Thinking Block -->
+<div class="flex flex-col border border-border bg-surface rounded overflow-hidden">
+<div class="flex items-center justify-between px-4 py-2 border-b border-border bg-surface-container-low cursor-pointer hover:bg-surface-container-high transition-colors">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-indigo-accent"></div>
+<span class="font-label-caps text-label-caps text-indigo-accent">Thinking ›</span>
+</div>
+<div class="font-label-code text-label-code text-muted text-[11px]">
+                            Input: 3 | Output: 175
+                        </div>
+</div>
+</div>
+<!-- Bash Block -->
+<div class="flex flex-col border border-border bg-surface rounded">
+<div class="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-container-low">
+<div class="w-2 h-2 rounded-full bg-secondary"></div>
+<span class="font-label-caps text-label-caps text-secondary">Bash — Run tests</span>
+</div>
+<div class="p-4 font-label-code text-label-code flex flex-col gap-2 bg-surface-container-lowest">
+<div class="flex gap-4">
+<span class="text-muted w-8 text-right select-none">IN:</span>
+<span class="text-on-surface">npm test</span>
+</div>
+<div class="flex gap-4">
+<span class="text-muted w-8 text-right select-none">OUT:</span>
+<span class="text-secondary">12 tests passed</span>
+</div>
+</div>
+</div>
+<!-- Assistant Message -->
+<div class="flex flex-col border border-border bg-surface rounded">
+<div class="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-container-low">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<span class="font-label-caps text-label-caps text-primary">Assistant</span>
+</div>
+<div class="p-4 font-body-md text-body-md text-on-surface flex flex-col gap-4">
+<p class="">I will run the build command and then update the Connect4 rules engine to fix the diagonal win detection bug.</p>
+<p class="">First, let's edit the <code class="font-label-code text-label-code bg-surface-container-high px-1.5 py-0.5 rounded text-primary">rules.test.ts</code> file to add the missing diagonal test cases.</p>
+</div>
+</div>
+<!-- Edit / Diff Block -->
+<div class="flex flex-col border border-border bg-surface rounded">
+<div class="flex items-center gap-2 px-4 py-2 border-b border-border bg-surface-container-low justify-between">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px] text-muted">edit_document</span>
+<span class="font-label-code text-label-code text-on-surface">rules.test.ts</span>
+</div>
+<span class="font-label-caps text-label-caps text-muted">Diff</span>
+</div>
+<div class="flex font-label-code text-label-code text-[12px] bg-surface-container-lowest overflow-x-auto">
+<div class="w-1/2 border-r border-border p-4 bg-error-container/10 flex flex-col gap-1">
+<div class="text-error flex gap-3"><span class="text-muted opacity-50 select-none">-</span> <span class="">function checkWin(board) {</span></div>
+<div class="text-error flex gap-3"><span class="text-muted opacity-50 select-none">-</span> <span class="ml-4">return checkHorizontal() || checkVertical();</span></div>
+<div class="text-error flex gap-3"><span class="text-muted opacity-50 select-none">-</span> <span class="">}</span></div>
+</div>
+<div class="w-1/2 p-4 bg-secondary-container/10 flex flex-col gap-1">
+<div class="text-secondary flex gap-3"><span class="text-muted opacity-50 select-none">+</span> <span class="">function checkWin(board) {</span></div>
+<div class="text-secondary flex gap-3"><span class="text-muted opacity-50 select-none">+</span> <span class="ml-4">return checkHorizontal() ||</span></div>
+<div class="text-secondary flex gap-3"><span class="text-muted opacity-50 select-none">+</span> <span class="ml-11 text-secondary-fixed">checkVertical() ||</span></div>
+<div class="text-secondary flex gap-3"><span class="text-muted opacity-50 select-none">+</span> <span class="ml-11 text-secondary-fixed">checkDiagonal();</span></div>
+<div class="text-secondary flex gap-3"><span class="text-muted opacity-50 select-none">+</span> <span class="">}</span></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Summary Footer -->
+<div class="mt-auto border-t border-border pt-4 pb-8 flex justify-between items-center font-label-code text-label-code text-muted">
+<span class="">Session Active</span>
+<div class="flex gap-4">
+<span class="">Total Tokens: 15.4k</span>
+<span class="">Cost Est: $0.12</span>
+</div>
+</div>
+</main>
+</div>
+
+
+</body></html>
