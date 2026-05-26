@@ -14,8 +14,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use std::fmt;
 
 /// A chat message — the payload of user and assistant transcript entries.
+/// Anthropic API uses snake_case fields inside the message object
+/// (`input_tokens`, `stop_reason`, etc.) even when the outer transcript
+/// uses camelCase (`parentUuid`, `isSidechain`, …).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Message {
     /// `"user"` or `"assistant"`.
     pub role: String,
@@ -82,7 +84,6 @@ where
 
 /// Token usage information for an assistant message.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct UsageInfo {
     /// Input / prompt tokens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -342,13 +343,13 @@ mod tests {
         let json = serde_json::json!({
             "role": "assistant",
             "model": "claude-opus-4-7",
-            "stopReason": "end_turn",
+            "stop_reason": "end_turn",
             "usage": {
-                "inputTokens": 1200,
-                "outputTokens": 300,
-                "cacheCreationInputTokens": 500,
-                "cacheReadInputTokens": 200,
-                "serviceTier": "standard"
+                "input_tokens": 1200,
+                "output_tokens": 300,
+                "cache_creation_input_tokens": 500,
+                "cache_read_input_tokens": 200,
+                "service_tier": "standard"
             },
             "content": [
                 {"type": "text", "text": "Here is the result:"},

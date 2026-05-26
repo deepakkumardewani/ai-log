@@ -1,3 +1,6 @@
-fn main() {
-    println!("cclog v0.1.0-dev");
+use clap::Parser;
+
+fn main() -> anyhow::Result<()> {
+    let cli = cclog::cli::Cli::parse();
+    cli.run()
 }

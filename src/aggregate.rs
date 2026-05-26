@@ -184,10 +184,10 @@ mod tests {
                 r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}"#
             ),
             format!(
-                r#"{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}],"usage":{{"inputTokens":100,"outputTokens":50,"cacheCreationInputTokens":200,"cacheReadInputTokens":30}}}}}}"#
+                r#"{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}],"usage":{{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":200,"cache_read_input_tokens":30}}}}}}"#
             ),
             format!(
-                r#"{{"type":"assistant","uuid":"{a2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"More"}}],"usage":{{"inputTokens":60,"outputTokens":40}}}}}}"#
+                r#"{{"type":"assistant","uuid":"{a2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"More"}}],"usage":{{"input_tokens":60,"output_tokens":40}}}}}}"#
             ),
         ];
         let jsonl = entries.join("\n");

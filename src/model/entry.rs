@@ -103,7 +103,9 @@ impl<'de> Deserialize<'de> for TranscriptEntry {
             "queue-operation" => TranscriptEntry::QueueOperation(
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?,
             ),
-            "hook-attachment" => TranscriptEntry::HookAttachment(
+            // Both "hook-attachment" and "attachment" are hook-emitted side
+            // entries — same shape, just two different discriminator strings.
+            "hook-attachment" | "attachment" => TranscriptEntry::HookAttachment(
                 serde_json::from_value(value).map_err(serde::de::Error::custom)?,
             ),
             "away-summary" => TranscriptEntry::AwaySummary(
@@ -190,6 +192,36 @@ pub struct SystemEntry {
     /// System-level metadata (tool-allow lists, model config, etc.).
     #[serde(default)]
     pub system: Option<serde_json::Value>,
+
+    /// Subtype discriminator (e.g. `stop_hook_summary`, `turn_duration`,
+    /// `away_summary`). Newer Claude Code transcripts attach metadata at
+    /// the top level rather than inside `system`.
+    #[serde(default)]
+    pub subtype: Option<String>,
+
+    /// Free-form content text (e.g. away summaries, hook output).
+    #[serde(default)]
+    pub content: Option<String>,
+
+    /// Duration in milliseconds (used by `turn_duration` subtype).
+    #[serde(default)]
+    pub duration_ms: Option<u64>,
+
+    /// Message count (used by `turn_duration` subtype).
+    #[serde(default)]
+    pub message_count: Option<u64>,
+
+    /// Hook invocation count (used by `stop_hook_summary`).
+    #[serde(default)]
+    pub hook_count: Option<u64>,
+
+    /// Hook information array (used by `stop_hook_summary`).
+    #[serde(default)]
+    pub hook_infos: Option<serde_json::Value>,
+
+    /// Severity level (e.g. `suggestion`, `warning`, `error`).
+    #[serde(default)]
+    pub level: Option<String>,
 }
 
 /// Async task queue operation.
