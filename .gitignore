@@ -15,3 +15,16 @@ Thumbs.db
 
 # Build artifacts
 /assets/styles.css
+
+# Generated session HTML at repo root (CLI export output)
+# Test fixtures under tests/fixtures/ are tracked separately.
+/*.html
+
+# Editor / merge backups
+*.bak
+*.orig
+*.rej
+
+# Coverage tooling (cargo-llvm-cov, tarpaulin)
+*.profraw
+/coverage/
