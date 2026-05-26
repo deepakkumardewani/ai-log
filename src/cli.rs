@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use askama::Template;
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
+
+use crate::render::markdown_export::DetailLevel;
 
 /// cclog — Claude Code transcript exporter.
 #[derive(Parser)]
@@ -26,19 +28,43 @@ pub enum Command {
         output: String,
     },
 
-    /// Export a JSONL session file to HTML.
+    /// Export a JSONL session file to HTML or Markdown.
     Export {
         /// Input JSONL file path.
         input: PathBuf,
 
-        /// Output file path (default: <input_stem>.html).
+        /// Output file path (default: <input_stem>.html or .md).
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Output format.
+        #[arg(long, value_enum, default_value_t = Format::Html)]
+        format: Format,
+
+        /// Detail level for markdown output.
+        #[arg(long, value_enum, default_value_t = DetailLevel::Full)]
+        detail: DetailLevel,
+
+        /// Compact mode: strip timestamps and horizontal rules (markdown only).
+        #[arg(long, default_value_t = false)]
+        compact: bool,
 
         /// Open the output file in the default browser.
         #[arg(long)]
         open_browser: bool,
     },
+}
+
+/// Output format for the export command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum Format {
+    /// Self-contained HTML (default).
+    Html,
+    /// Markdown.
+    #[clap(name = "md")]
+    #[clap(alias = "markdown")]
+    Markdown,
 }
 
 impl Cli {
@@ -48,18 +74,21 @@ impl Cli {
             Some(Command::Export {
                 input,
                 output,
+                format,
+                detail,
+                compact,
                 open_browser,
-            }) => run_export(&input, output.as_deref(), open_browser),
+            }) => run_export(&input, output.as_deref(), format, detail, compact, open_browser),
             None => {
                 // If --input is provided directly, treat as export.
                 if let Some(ref input) = self.input {
-                    run_export(input, None, false)
+                    run_export(input, None, Format::Html, DetailLevel::Full, false, false)
                 } else {
                     // Default: print version and usage hint.
                     println!("cclog v0.1.0-dev");
                     println!("Usage: cclog <COMMAND>");
                     println!("  stub     Emit a stub HTML for design review");
-                    println!("  export   Export a JSONL session to HTML");
+                    println!("  export   Export a JSONL session to HTML or Markdown");
                     println!("  help     Print help information");
                     Ok(())
                 }
@@ -79,7 +108,14 @@ fn run_stub(output: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_export(input: &Path, output: Option<&str>, open_browser: bool) -> anyhow::Result<()> {
+fn run_export(
+    input: &Path,
+    output: Option<&str>,
+    format: Format,
+    detail: DetailLevel,
+    compact: bool,
+    open_browser: bool,
+) -> anyhow::Result<()> {
     // Parse the JSONL file.
     let result = crate::parser::parse_file(input)?;
     if !result.warnings.is_empty() {
@@ -97,30 +133,53 @@ fn run_export(input: &Path, output: Option<&str>, open_browser: bool) -> anyhow:
     // Aggregate.
     let agg = crate::aggregate::aggregate(&session);
 
-    // Build render context.
-    let ctx = crate::render::html::build_context(&session, &agg, crate::assets::CSS.to_string());
+    match format {
+        Format::Html => {
+            let ctx =
+                crate::render::html::build_context(&session, &agg, crate::assets::CSS.to_string());
+            let html = ctx.render()?;
 
-    // Render HTML.
-    let html = ctx.render()?;
+            let output_path = match output {
+                Some(o) => o.to_string(),
+                None => {
+                    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
+                    format!("{}.html", stem)
+                }
+            };
 
-    // Determine output path.
-    let output_path = match output {
-        Some(o) => o.to_string(),
-        None => {
-            let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
-            format!("{}.html", stem)
+            std::fs::write(&output_path, &html)?;
+            println!("Exported to {output_path}");
+            println!("  Format: HTML");
+            println!("  Messages: {}", agg.message_count);
+            println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
+            let self_contained = !html.contains("http://") && !html.contains("https://");
+            println!("  Self-contained: {}", if self_contained { "yes" } else { "NO" });
+
+            if open_browser {
+                let _ = std::process::Command::new("open").arg(&output_path).spawn();
+            }
         }
-    };
 
-    std::fs::write(&output_path, &html)?;
-    println!("Exported to {output_path}");
-    println!("  Messages: {}", agg.message_count);
-    println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
-    let self_contained = !html.contains("http://") && !html.contains("https://");
-    println!("  Self-contained: {}", if self_contained { "yes" } else { "NO" });
+        Format::Markdown => {
+            let md =
+                crate::render::markdown_export::render_session(&session, &agg, detail, compact);
 
-    if open_browser {
-        let _ = std::process::Command::new("open").arg(&output_path).spawn();
+            let output_path = match output {
+                Some(o) => o.to_string(),
+                None => {
+                    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
+                    format!("{}.md", stem)
+                }
+            };
+
+            std::fs::write(&output_path, &md)?;
+            println!("Exported to {output_path}");
+            println!("  Format: Markdown");
+            println!("  Detail: {:?}", detail);
+            println!("  Compact: {}", if compact { "yes" } else { "no" });
+            println!("  Messages: {}", agg.message_count);
+            println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
+        }
     }
 
     Ok(())
