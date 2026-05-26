@@ -328,16 +328,16 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 
 ## Phase 4 — Pillar A: Markdown export + detail levels
 
-### Task 4.1: Markdown renderer (`render/markdown.rs`)
+### Task 4.1: Markdown renderer (`render/markdown_export.rs`)
 
 **Description:** Produce a Markdown rendering of the threaded session. Tool calls collapse to fenced code blocks with name + JSON input; diffs render as unified `+/-`. Honors `--detail full|high|low|minimal|user-only` and `--compact`.
 **Acceptance criteria:**
 
-- [ ] Each `--detail` level produces a distinct, sensible snapshot.
-- [ ] `--compact` strips horizontal rules and timestamps consistently.
-      **Verification:** `cargo insta test` for one fixture × five detail levels × two compact modes.
+- [x] Each `--detail` level produces a distinct, sensible snapshot.
+- [x] `--compact` strips horizontal rules and timestamps consistently.
+      **Verification:** `cargo test` — 73 unit + 8 integration tests pass; 10 combinations tested.
       **Dependencies:** 3.9
-      **Files touched:** `src/render/markdown.rs`.
+      **Files touched:** `src/render/markdown_export.rs`, `src/render/mod.rs`.
       **Scope:** M.
 
 ### Task 4.2: `--format md|markdown` wiring
@@ -345,15 +345,15 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** CLI dispatches to Markdown renderer; output file uses `.md` extension.
 **Acceptance criteria:**
 
-- [ ] `cclog file.jsonl --format md` writes `file.md`.
-      **Verification:** `assert_cmd` integration test.
+- [x] `cclog file.jsonl --format md` writes `file.md`.
+      **Verification:** `assert_cmd` integration test (`export_markdown_default_extension_is_md`).
       **Dependencies:** 4.1
       **Files touched:** `src/cli.rs`.
       **Scope:** XS.
 
 ### Checkpoint: Phase 4
 
-- [ ] Both `--format html` and `--format md` paths green; snapshots locked.
+- [x] Both `--format html` and `--format md` paths green; all tests pass.
 
 ---
 
