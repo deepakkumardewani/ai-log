@@ -1,0 +1,14 @@
+<!-- Tool Usage Section -->
+<div class="sidebar-section">
+  <div class="sidebar-section-header">
+    <span class="sidebar-section-title">Tool Usage</span>
+  </div>
+  <nav class="sidebar-tools">
+    {% for tool in tool_counts %}
+    <div class="sidebar-tool-item">
+      <span class="sidebar-tool-name">{{ tool.name }}</span>
+      <span class="sidebar-tool-count">{{ tool.count }}</span>
+    </div>
+    {% endfor %}
+  </nav>
+</div>

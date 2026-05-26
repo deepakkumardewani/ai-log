@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ page_title }}</title>
+<style>
+/* Embedded Material-3 CSS — self-contained, no CDN. */
+{{ css|safe }}
+</style>
+</head>
+<body>
+{% include "components/header.html" %}
+
+<div class="layout-body">
+  {% include "components/sidebar/sidebar.html" %}
+
+  <main class="main-content" id="main-content">
+    {% block content %}{% endblock %}
+
+    {% include "components/status_bar.html" %}
+  </main>
+</div>
+
+<button class="back-to-top" id="back-to-top" type="button" aria-label="Back to top" title="Back to top">&#x2191;</button>
+
+<script>
+(function () {
+  var btn = document.getElementById('back-to-top');
+  var scroller = document.getElementById('main-content');
+  if (btn && scroller) {
+    var update = function () {
+      if (scroller.scrollTop > 200) btn.classList.add('is-visible');
+      else btn.classList.remove('is-visible');
+    };
+    scroller.addEventListener('scroll', update, { passive: true });
+    btn.addEventListener('click', function () {
+      scroller.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    update();
+  }
+
+  // Show more / Show less toggle for long card bodies.
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-show-more]');
+    if (!b) return;
+    e.stopPropagation();
+    var c = b.closest('[data-collapsible]');
+    if (!c) return;
+    var expanded = c.classList.toggle('is-expanded');
+    b.textContent = expanded ? 'Show less' : 'Show more';
+  });
+
+  // Card header click collapses / expands the whole card.
+  document.addEventListener('click', function (e) {
+    var h = e.target.closest('[data-card-toggle]');
+    if (!h) return;
+    // Ignore clicks on links, buttons, code, etc. inside the header.
+    if (e.target.closest('a, button, input, code, pre')) return;
+    var card = h.closest('[data-card-collapse]');
+    if (card) card.classList.toggle('is-collapsed');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+<!-- Table of Contents Section -->
+<div class="sidebar-section">
+  <div class="sidebar-section-header">
+    <span class="sidebar-section-title">Table of Contents</span>
+  </div>
+  <nav class="sidebar-toc">
+    {% for item in toc_items %}
+    <a href="{{ item.anchor }}" class="sidebar-toc-item">
+      <span class="sidebar-toc-icon">{{ item.icon }}</span>
+      <span class="sidebar-toc-label">{{ item.label }}</span>
+    </a>
+    {% endfor %}
+  </nav>
+</div>

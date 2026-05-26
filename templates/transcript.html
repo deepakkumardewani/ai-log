@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+
+{% block content %}
+<!-- Message Filter Bar -->
+<div class="filter-bar">
+  <div class="filter-search">
+    <span class="filter-search-icon">&#x1F50D;</span>
+    <input type="text" placeholder="Search session..." class="filter-search-input">
+  </div>
+  <div class="filter-divider"></div>
+  <div class="filter-chips">
+    <span class="filter-chip filter-chip--active">User</span>
+    <span class="filter-chip">Assistant</span>
+    <span class="filter-chip">Bash</span>
+    <span class="filter-chip">Read</span>
+    <span class="filter-chip">Write</span>
+    <span class="filter-chip">Edit</span>
+    <span class="filter-chip">Thinking</span>
+  </div>
+</div>
+
+<!-- Message Cards -->
+<div class="message-list">
+  {% for card in message_cards %}
+  <div id="{{ card.anchor }}" class="message-card-wrapper {{ card.kind_class }}">
+    {{ card.html|safe }}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

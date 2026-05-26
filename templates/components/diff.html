@@ -1,0 +1,22 @@
+<!-- Side-by-side Diff Card (placeholder) -->
+<div class="message-card">
+  <div class="message-card-header message-card-header--diff">
+    <span class="diff-file-icon">&#x1F4DD;</span>
+    <span class="diff-file-name">rules.test.ts</span>
+    <span class="diff-badge">Diff</span>
+  </div>
+  <div class="diff-container">
+    <div class="diff-side diff-side--old">
+      <div class="diff-line diff-line--removed"><span class="diff-marker">-</span> function checkWin(board) {</div>
+      <div class="diff-line diff-line--removed"><span class="diff-marker">-</span>   return checkHorizontal() || checkVertical();</div>
+      <div class="diff-line diff-line--removed"><span class="diff-marker">-</span> }</div>
+    </div>
+    <div class="diff-side diff-side--new">
+      <div class="diff-line diff-line--added"><span class="diff-marker">+</span> function checkWin(board) {</div>
+      <div class="diff-line diff-line--added"><span class="diff-marker">+</span>   return checkHorizontal() ||</div>
+      <div class="diff-line diff-line--added diff-line--highlight"><span class="diff-marker">+</span>     checkVertical() ||</div>
+      <div class="diff-line diff-line--added diff-line--highlight"><span class="diff-marker">+</span>     checkDiagonal();</div>
+      <div class="diff-line diff-line--added"><span class="diff-marker">+</span> }</div>
+    </div>
+  </div>
+</div>

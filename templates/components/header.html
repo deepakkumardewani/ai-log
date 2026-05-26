@@ -1,0 +1,28 @@
+<!-- Top App Bar -->
+<header class="header">
+  <div class="header-left">
+    <div class="header-logo">
+      <span class="header-logo-icon">&#x2328;</span>
+      <span class="header-logo-text">Claude Code Session</span>
+    </div>
+    <div class="header-separator"></div>
+    <div class="header-meta">
+      <span class="header-meta-title">{{ session_title }}</span>
+      <div class="header-meta-stats">
+        <span>{{ session_time }}</span>
+        <span>&#x2022;</span>
+        <span>{{ session_date }}</span>
+        <span>&#x2022;</span>
+        <span>{{ duration }}</span>
+        <span>&#x2022;</span>
+        <span>{{ message_count }} Msgs</span>
+        <span>&#x2022;</span>
+        <span>{{ token_total }} Tokens</span>
+      </div>
+    </div>
+  </div>
+  <div class="header-actions">
+    <button class="header-btn" title="Toggle theme">&#x25D0;</button>
+    <button class="header-btn" title="Settings">&#x2699;</button>
+  </div>
+</header>

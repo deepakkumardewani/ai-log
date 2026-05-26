@@ -1,0 +1,19 @@
+<!-- File Explorer Section -->
+<div class="sidebar-section">
+  <div class="sidebar-section-header">
+    <span class="sidebar-section-title">File Explorer</span>
+  </div>
+  <nav class="sidebar-files">
+    {% for group in file_tree %}
+    <div class="sidebar-file-group">
+      <div class="sidebar-file-dir">&#x1F4C1; {{ group.directory }}</div>
+      {% for file in group.files %}
+      <div class="sidebar-file-item">
+        <span class="sidebar-file-icon">&#x1F4C4;</span>
+        <span class="sidebar-file-name">{{ file }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </nav>
+</div>
