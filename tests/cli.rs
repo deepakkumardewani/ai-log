@@ -206,3 +206,240 @@ fn export_markdown_default_extension_is_md() {
 
     let _ = std::fs::remove_file(&expected);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 5: All-projects + cache + index tests
+// ---------------------------------------------------------------------------
+
+use std::fs;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+static TEST_ID: AtomicU32 = AtomicU32::new(0);
+
+fn unique_test_id() -> u32 {
+    TEST_ID.fetch_add(1, Ordering::SeqCst)
+}
+
+fn setup_fixture_projects_dir() -> std::path::PathBuf {
+    let tmp = std::env::temp_dir().join(format!(
+        "cclog-phase5-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+    fs::create_dir_all(&tmp).unwrap();
+
+    // Project A with 2 sessions.
+    let proj_a = tmp.join("my-app");
+    fs::create_dir_all(&proj_a).unwrap();
+    fs::write(
+        proj_a.join("sess-a1.jsonl"),
+        r#"{"type":"user","uuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2025-01-01T10:00:00Z","sessionId":"sess-a1","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}"#,
+    ).unwrap();
+    fs::write(
+        proj_a.join("sess-a2.jsonl"),
+        r#"{"type":"assistant","uuid":"550e8400-e29b-41d4-a716-446655440002","parentUuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2025-01-02T10:00:00Z","sessionId":"sess-a2","message":{"role":"assistant","content":[{"type":"text","text":"hi"}],"usage":{"input_tokens":10,"output_tokens":5}}}"#,
+    ).unwrap();
+
+    // Project B with 1 session.
+    let proj_b = tmp.join("other-app");
+    fs::create_dir_all(&proj_b).unwrap();
+    fs::write(
+        proj_b.join("sess-b1.jsonl"),
+        r#"{"type":"user","uuid":"550e8400-e29b-41d4-a716-446655440003","timestamp":"2025-01-03T10:00:00Z","sessionId":"sess-b1","message":{"role":"user","content":[{"type":"text","text":"hey"}]}}"#,
+    ).unwrap();
+
+    tmp
+}
+
+#[test]
+fn all_projects_generates_index_and_combined_pages() {
+    let projects_dir = setup_fixture_projects_dir();
+    let n = unique_test_id();
+    let output_dir =
+        std::env::temp_dir().join(format!("cclog-p5-out-{}-{}", std::process::id(), n));
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--no-cache",
+    ]);
+    cmd.assert().success();
+
+    // Master index.
+    let index_path = output_dir.join("index.html");
+    assert!(index_path.exists(), "index.html should exist");
+    let index = fs::read_to_string(&index_path).unwrap();
+    assert!(
+        index.contains("my-app"),
+        "index should contain my-app, got:\n{}",
+        &index[..index.len().min(500)]
+    );
+    assert!(
+        index.contains("other-app"),
+        "index should contain other-app, got:\n{}",
+        &index[..index.len().min(500)]
+    );
+    assert!(!index.contains("http://"));
+    assert!(!index.contains("https://"));
+
+    // Per-project combined pages.
+    let combined_a = output_dir.join("my-app/combined_transcripts.html");
+    assert!(combined_a.exists(), "project A combined page should exist");
+    let html_a = fs::read_to_string(&combined_a).unwrap();
+    assert!(html_a.contains("sess-a1.html"));
+    assert!(html_a.contains("sess-a2.html"));
+
+    let combined_b = output_dir.join("other-app/combined_transcripts.html");
+    assert!(combined_b.exists(), "project B combined page should exist");
+
+    // Per-session HTML files.
+    assert!(output_dir.join("my-app/sess-a1.html").exists());
+    assert!(output_dir.join("my-app/sess-a2.html").exists());
+    assert!(output_dir.join("other-app/sess-b1.html").exists());
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn no_individual_sessions_skips_per_session_files() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "cclog-p5-nosess-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--no-individual-sessions",
+        "--no-cache",
+    ]);
+    cmd.assert().success();
+
+    // Index should exist.
+    assert!(output_dir.join("index.html").exists());
+    // Combined should exist.
+    assert!(output_dir.join("my-app/combined_transcripts.html").exists());
+    // Per-session should NOT exist.
+    assert!(!output_dir.join("my-app/sess-a1.html").exists());
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn session_id_prefix_match_filters_correctly() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "cclog-p5-sid-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--session-id",
+        "sess-b1",
+        "--no-cache",
+    ]);
+    cmd.assert().success();
+
+    // Only project B should be present.
+    assert!(output_dir.join("other-app/combined_transcripts.html").exists());
+    // Project A should NOT be present.
+    assert!(!output_dir.join("my-app").exists());
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn ambiguous_session_id_prefix_errors() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "cclog-p5-ambig-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    // "sess-a" matches both sess-a1 and sess-a2.
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--session-id",
+        "sess-a",
+        "--no-cache",
+    ]);
+    cmd.assert().failure();
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn clear_cache_flag_works() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "cclog-p5-clrcache-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    // First run to populate cache.
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+    ]);
+    cmd.assert().success();
+
+    // Cache file should exist.
+    let cache_path = projects_dir.join("cclog-cache.db");
+    assert!(cache_path.exists(), "cache file should be created");
+
+    // Second run with --clear-cache.
+    let output_dir2 = std::env::temp_dir().join(format!(
+        "cclog-p5-clrcache2-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "--all-projects",
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir2.to_str().unwrap(),
+        "--clear-cache",
+    ]);
+    cmd.assert().success();
+
+    // Cache should be recreated (still exists after clear+repopulate).
+    assert!(cache_path.exists());
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+    fs::remove_dir_all(&output_dir2).ok();
+}

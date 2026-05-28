@@ -4,9 +4,11 @@
 
 pub mod aggregate;
 pub mod assets;
+pub mod cache;
 pub mod cli;
 pub mod model;
 pub mod parser;
+pub mod project;
 pub mod render;
 pub mod session;
 

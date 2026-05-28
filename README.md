@@ -23,6 +23,8 @@ Opens (or writes) a fully self-contained `session.html` — no CDN URLs, no exte
 - **Thinking Block Support**: Collapsible extended thinking sections
 - **Token Usage Tracking**: Per-message and per-session input/output token counts
 - **Zero-Config**: Sensible defaults — just point it at a JSONL file
+- **Multi-Project Export**: Export all your Claude Code projects at once with `cclog --all-projects`, generating a static navigable site with master index + per-project pages
+- **SQLite Cache**: Session metadata cached for fast incremental rebuilds; `--clear-cache` and `--no-cache` flags for control
 - **Fast**: Single-pass JSONL parser with a session DAG built in memory; typical sessions export in milliseconds
 
 ## Installation
@@ -95,6 +97,40 @@ cclog export session.jsonl --format md --detail low --compact -o context.md
 
 `--compact` merges repeated same-type headings so runs of assistant turns share one `### Assistant` instead of repeating it for each message — significantly reduces token count.
 
+### Export all projects
+
+```sh
+cclog --all-projects
+# walks ~/.claude/projects/ and generates cclog-out/
+#   index.html
+#   <project>/combined_transcripts.html
+#   <project>/<session>.html
+```
+
+```sh
+cclog --all-projects --projects-dir /path/to/projects --output-dir ./out
+```
+
+### Filter by session ID
+
+```sh
+cclog --all-projects --session-id 6162c547
+# exports only the matching session (prefix match)
+```
+
+### Cache control
+
+```sh
+cclog --all-projects --no-cache      # skip cache entirely
+cclog --all-projects --clear-cache   # drop and rebuild cache
+```
+
+### Combined pages only (skip per-session HTML)
+
+```sh
+cclog --all-projects --no-individual-sessions
+```
+
 ### Open in browser after export
 
 ```sh
@@ -128,10 +164,10 @@ cclog export session.jsonl --open-browser
 - [x] Phase 2 — Templates and assets (Material 3 tokens, Askama base)
 - [x] Phase 3 — Single-session HTML export with full tool rendering
 - [x] Phase 4 — Markdown export with detail levels and compact mode
+- [x] Phase 5 — Project hierarchy + master index + SQLite cache
 
 Coming next:
 
-- [ ] Phase 5 — Project hierarchy + master index + SQLite cache
 - [ ] Phase 6 — CLI parity (date filters, `--open-browser` polish, image modes)
 - [ ] Phase 7 — JavaScript filter shim for HTML output
 - [ ] Phase 8 — Release packaging, `cargo install`, crates.io publish
