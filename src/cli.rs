@@ -52,6 +52,31 @@ pub struct Cli {
     /// Output directory (default: ./cclog-out/).
     #[arg(long)]
     pub output_dir: Option<PathBuf>,
+
+    // ------------------------------------------------------------------
+    // Phase 6: CLI parity
+    // ------------------------------------------------------------------
+    /// Filter sessions starting on or after this date.
+    /// Accepts: today, yesterday, last week, last month, YYYY-MM-DD.
+    #[arg(long, global = true)]
+    pub from_date: Option<String>,
+
+    /// Filter sessions ending on or before this date.
+    /// Accepts: today, yesterday, last week, last month, YYYY-MM-DD.
+    #[arg(long, global = true)]
+    pub to_date: Option<String>,
+
+    /// Split long sessions across multiple HTML pages (messages per page).
+    #[arg(long, global = true)]
+    pub page_size: Option<usize>,
+
+    /// Enable verbose debug logging via tracing.
+    #[arg(long, global = true)]
+    pub debug: bool,
+
+    /// Interactive TUI mode (coming in a later release).
+    #[arg(long, global = true)]
+    pub tui: bool,
 }
 
 #[derive(Subcommand)]
@@ -104,6 +129,22 @@ pub enum Format {
 
 impl Cli {
     pub fn run(self) -> anyhow::Result<()> {
+        // --tui exits early with code 2.
+        if self.tui {
+            eprintln!("Error: --tui is coming in a later release.");
+            std::process::exit(2);
+        }
+
+        // --debug enables tracing.
+        if self.debug {
+            tracing_subscriber::fmt()
+                .with_env_filter(
+                    tracing_subscriber::EnvFilter::try_from_default_env()
+                        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("debug")),
+                )
+                .init();
+        }
+
         match self.command {
             Some(Command::Stub { output }) => run_stub(&output),
             Some(Command::Export {
@@ -113,11 +154,31 @@ impl Cli {
                 detail,
                 compact,
                 open_browser,
-            }) => run_export(&input, output.as_deref(), format, detail, compact, open_browser),
+            }) => run_export(ExportConfig {
+                input: &input,
+                output: output.as_deref(),
+                format,
+                detail,
+                compact,
+                open_browser,
+                from_date: self.from_date.as_deref(),
+                to_date: self.to_date.as_deref(),
+                page_size: self.page_size,
+            }),
             None => {
                 // If --input is provided, treat as single export.
                 if let Some(ref input) = self.input {
-                    run_export(input, None, Format::Html, DetailLevel::Full, false, false)
+                    run_export(ExportConfig {
+                        input,
+                        output: None,
+                        format: Format::Html,
+                        detail: DetailLevel::Full,
+                        compact: false,
+                        open_browser: false,
+                        from_date: self.from_date.as_deref(),
+                        to_date: self.to_date.as_deref(),
+                        page_size: self.page_size,
+                    })
                 } else {
                     // Default: all-projects export.
                     run_all_projects(self)
@@ -142,15 +203,20 @@ fn run_stub(output: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn run_export(
-    input: &Path,
-    output: Option<&str>,
+struct ExportConfig<'a> {
+    input: &'a Path,
+    output: Option<&'a str>,
     format: Format,
     detail: DetailLevel,
     compact: bool,
     open_browser: bool,
-) -> anyhow::Result<()> {
-    let result = crate::parser::parse_file(input)?;
+    from_date: Option<&'a str>,
+    to_date: Option<&'a str>,
+    page_size: Option<usize>,
+}
+
+fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
+    let result = crate::parser::parse_file(cfg.input)?;
     if !result.warnings.is_empty() {
         for w in &result.warnings {
             eprintln!("Warning: line {}: {}", w.line, w.message);
@@ -164,18 +230,68 @@ fn run_export(
 
     let agg = crate::aggregate::aggregate(&session);
 
-    match format {
+    // Date filter: skip if session doesn't match the date range.
+    if !session_matches_date_range(&agg, cfg.from_date, cfg.to_date)? {
+        anyhow::bail!(
+            "Session does not match the requested date range (from={:?}, to={:?})",
+            cfg.from_date,
+            cfg.to_date
+        );
+    }
+
+    match cfg.format {
         Format::Html => {
-            let ctx =
-                crate::render::html::build_context(&session, &agg, crate::assets::CSS.to_string());
+            let css = crate::assets::CSS.to_string();
+            let base_stem = match cfg.output {
+                Some(o) => {
+                    if let Some(stem) = o.strip_suffix(".html") {
+                        stem.to_string()
+                    } else {
+                        o.to_string()
+                    }
+                }
+                None => {
+                    cfg.input.file_stem().and_then(|s| s.to_str()).unwrap_or("session").to_string()
+                }
+            };
+
+            if let Some(ps) = cfg.page_size {
+                if let Some(pages) = crate::render::pagination::paginate(&session, ps) {
+                    let total = pages.len();
+                    for page in &pages {
+                        let filename = crate::render::pagination::page_filename(&base_stem, page);
+                        let ctx = crate::render::html::build_context_paginated(
+                            &session,
+                            &agg,
+                            css.clone(),
+                            page,
+                        );
+                        let html = ctx.render()?;
+                        std::fs::write(&filename, &html)?;
+                        println!(
+                            "Exported page {}/{} to {filename} ({} messages)",
+                            page.number,
+                            total,
+                            page.message_range.len()
+                        );
+                    }
+                    println!("  Format: HTML (paginated, {total} pages)");
+                    println!("  Messages: {}", agg.message_count);
+                    println!(
+                        "  Tokens: {} in / {} out",
+                        agg.total_input_tokens, agg.total_output_tokens
+                    );
+                    return Ok(());
+                }
+            }
+
+            // Non-paginated path.
+            let ctx = crate::render::html::build_context(&session, &agg, css);
             let html = ctx.render()?;
 
-            let output_path = match output {
+            let output_path = match cfg.output {
                 Some(o) => o.to_string(),
-                None => {
-                    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
-                    format!("{}.html", stem)
-                }
+                None => format!("{}.html", base_stem),
             };
 
             std::fs::write(&output_path, &html)?;
@@ -186,19 +302,23 @@ fn run_export(
             let self_contained = !html.contains("http://") && !html.contains("https://");
             println!("  Self-contained: {}", if self_contained { "yes" } else { "NO" });
 
-            if open_browser {
+            if cfg.open_browser {
                 let _ = std::process::Command::new("open").arg(&output_path).spawn();
             }
         }
 
         Format::Markdown => {
-            let md =
-                crate::render::markdown_export::render_session(&session, &agg, detail, compact);
+            let md = crate::render::markdown_export::render_session(
+                &session,
+                &agg,
+                cfg.detail,
+                cfg.compact,
+            );
 
-            let output_path = match output {
+            let output_path = match cfg.output {
                 Some(o) => o.to_string(),
                 None => {
-                    let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
+                    let stem = cfg.input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
                     format!("{}.md", stem)
                 }
             };
@@ -206,8 +326,8 @@ fn run_export(
             std::fs::write(&output_path, &md)?;
             println!("Exported to {output_path}");
             println!("  Format: Markdown");
-            println!("  Detail: {:?}", detail);
-            println!("  Compact: {}", if compact { "yes" } else { "no" });
+            println!("  Detail: {:?}", cfg.detail);
+            println!("  Compact: {}", if cfg.compact { "yes" } else { "no" });
             println!("  Messages: {}", agg.message_count);
             println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
         }
@@ -245,6 +365,12 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
 
     let use_cache = !cli.no_cache;
     let cache: Option<Cache> = if use_cache { Cache::open(&cache_path).ok() } else { None };
+
+    // Parse date filters once.
+    let from_dt =
+        if let Some(ref s) = cli.from_date { Some(crate::dates::parse_date(s)?) } else { None };
+    let to_dt =
+        if let Some(ref s) = cli.to_date { Some(crate::dates::parse_date(s)?) } else { None };
 
     // Discover projects.
     let mut projects = crate::project::discover_projects(&projects_dir);
@@ -354,6 +480,16 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                 (title, msg_count, it, ot, cc, cr, first, last)
             };
 
+            // Date filter.
+            if !cached_timestamps_match_date_range(
+                first_ts.as_deref(),
+                last_ts.as_deref(),
+                from_dt,
+                to_dt,
+            ) {
+                continue;
+            }
+
             let total_session_tokens = input_tok + output_tok + cache_create + cache_read;
 
             // Export per-session HTML if not skipped.
@@ -364,10 +500,30 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                     let parse_result = crate::parser::parse_file(&sf.path)?;
                     let session = crate::session::build_session(&parse_result.entries);
                     let agg = crate::aggregate::aggregate(&session);
-                    let ctx = crate::render::html::build_context(&session, &agg, css.clone());
-                    let html = ctx.render()?;
-                    fs::write(&session_html_path, &html)?;
-                    total_exported += 1;
+
+                    if let Some(ps) = cli.page_size {
+                        if let Some(pages) = crate::render::pagination::paginate(&session, ps) {
+                            for page in &pages {
+                                let filename =
+                                    crate::render::pagination::page_filename(&sf.id, page);
+                                let page_path = project_out.join(&filename);
+                                let ctx = crate::render::html::build_context_paginated(
+                                    &session,
+                                    &agg,
+                                    css.clone(),
+                                    page,
+                                );
+                                let html = ctx.render()?;
+                                fs::write(&page_path, &html)?;
+                            }
+                            total_exported += 1;
+                        }
+                    } else {
+                        let ctx = crate::render::html::build_context(&session, &agg, css.clone());
+                        let html = ctx.render()?;
+                        fs::write(&session_html_path, &html)?;
+                        total_exported += 1;
+                    }
                 }
             }
 
@@ -447,6 +603,10 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 /// Filter projects to only include the session matching `prefix`.
 fn filter_by_session_id(
     projects: Vec<crate::project::Project>,
@@ -481,4 +641,88 @@ fn filter_by_session_id(
         path: project.path.clone(),
         sessions: vec![session.clone()],
     }])
+}
+
+/// Check whether a session (with known aggregate timestamps) matches the
+/// requested date range.
+fn session_matches_date_range(
+    agg: &crate::aggregate::SessionAggregate,
+    from_date: Option<&str>,
+    to_date: Option<&str>,
+) -> anyhow::Result<bool> {
+    let from_dt = if let Some(s) = from_date { Some(crate::dates::parse_date(s)?) } else { None };
+    let to_dt = if let Some(s) = to_date { Some(crate::dates::parse_date(s)?) } else { None };
+
+    let first = agg.first_timestamp;
+    let last = agg.last_timestamp;
+
+    Ok(match (from_dt, to_dt, first, last) {
+        // No filter → always match.
+        (None, None, _, _) => true,
+        // Only from-date: session must end on or after it.
+        (Some(f), None, _, Some(l)) => l >= f,
+        // Only to-date: session must start on or before it (end of that day).
+        (None, Some(t), Some(f), _) => {
+            let to_end = t.end_day();
+            f <= to_end
+        }
+        // Both: session's range must overlap with [from, to_end].
+        (Some(f), Some(t), Some(first_ts), Some(last_ts)) => {
+            let to_end = t.end_day();
+            last_ts >= f && first_ts <= to_end
+        }
+        // If we don't have timestamps, include the session (can't filter).
+        _ => true,
+    })
+}
+
+/// Check whether a cached session (with string timestamps) matches the
+/// requested date range.
+fn cached_timestamps_match_date_range(
+    first_ts: Option<&str>,
+    last_ts: Option<&str>,
+    from_dt: Option<chrono::DateTime<chrono::Utc>>,
+    to_dt: Option<chrono::DateTime<chrono::Utc>>,
+) -> bool {
+    match (from_dt, to_dt, first_ts, last_ts) {
+        (None, None, _, _) => true,
+        (Some(f), None, _, Some(l)) => {
+            if let Ok(last_dt) = chrono::DateTime::parse_from_rfc3339(l) {
+                last_dt >= f
+            } else {
+                true
+            }
+        }
+        (None, Some(t), Some(f), _) => {
+            if let Ok(first_dt) = chrono::DateTime::parse_from_rfc3339(f) {
+                let to_end = t.end_day();
+                first_dt <= to_end
+            } else {
+                true
+            }
+        }
+        (Some(f), Some(t), Some(first_s), Some(last_s)) => {
+            if let (Ok(first_dt), Ok(last_dt)) = (
+                chrono::DateTime::parse_from_rfc3339(first_s),
+                chrono::DateTime::parse_from_rfc3339(last_s),
+            ) {
+                let to_end = t.end_day();
+                last_dt >= f && first_dt <= to_end
+            } else {
+                true
+            }
+        }
+        _ => true,
+    }
+}
+
+/// Extension trait to get end-of-day for a DateTime<Utc>.
+trait EndOfDay {
+    fn end_day(self) -> chrono::DateTime<chrono::Utc>;
+}
+
+impl EndOfDay for chrono::DateTime<chrono::Utc> {
+    fn end_day(self) -> chrono::DateTime<chrono::Utc> {
+        self.date_naive().and_hms_opt(23, 59, 59).unwrap().and_local_timezone(chrono::Utc).unwrap()
+    }
 }

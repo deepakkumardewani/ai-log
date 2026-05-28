@@ -108,6 +108,50 @@ pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> 
     }
 }
 
+/// Build a paginated context: only messages within `page.message_range` are
+/// included. The chrome (header, sidebar) is only rendered on the first page.
+pub fn build_context_paginated(
+    session: &Session,
+    agg: &SessionAggregate,
+    css: String,
+    page: &super::pagination::Page,
+) -> TranscriptContext {
+    let all_cards = build_message_cards(session);
+    let page_cards: Vec<MessageCard> = all_cards
+        .into_iter()
+        .skip(page.message_range.start)
+        .take(page.message_range.len())
+        .collect();
+
+    let toc_items = build_toc(&page_cards);
+    let file_tree = if page.is_first { build_file_tree(agg) } else { Vec::new() };
+    let tool_counts = if page.is_first { build_tool_counts(agg) } else { Vec::new() };
+    let duration = format_duration(agg);
+    let session_date = format_date(agg);
+    let session_time = format_time(agg);
+    let raw_total = agg.total_input_tokens
+        + agg.total_output_tokens
+        + agg.total_cache_creation_tokens
+        + agg.total_cache_read_tokens;
+    let token_total = format_token_count(raw_total);
+
+    TranscriptContext {
+        css,
+        page_title: format!("{} (page {}/{}) — cclog", agg.session_id, page.number, page.total),
+        session_title: agg.summaries.first().cloned().unwrap_or_else(|| agg.session_id.clone()),
+        session_date,
+        session_time,
+        message_count: agg.message_count,
+        token_total,
+        duration,
+        is_active: agg.is_active,
+        toc_items,
+        file_tree,
+        tool_counts,
+        message_cards: page_cards,
+    }
+}
+
 fn format_token_count(n: u64) -> String {
     if n >= 1_000_000 {
         format!("{:.1}M", n as f64 / 1_000_000.0)

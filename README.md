@@ -118,11 +118,36 @@ cclog --all-projects --session-id 6162c547
 # exports only the matching session (prefix match)
 ```
 
+### Date-filtered export
+
+```sh
+cclog export session.jsonl --from-date yesterday --to-date today
+cclog --all-projects --from-date 2025-06-01 --to-date 2025-06-30
+```
+
+Accepts: `today`, `yesterday`, `last week`, `last month`, and ISO dates (`YYYY-MM-DD`). Sessions whose timestamp range doesn't overlap the filter window are skipped.
+
+### Paginated output
+
+```sh
+cclog export session.jsonl --page-size 50
+# splits into session-page-1.html, session-page-2.html, ...
+```
+
+Long sessions can be split across multiple HTML files with `--page-size N` (messages per page). The first page includes the full chrome; subsequent pages are content-only.
+
 ### Cache control
 
 ```sh
 cclog --all-projects --no-cache      # skip cache entirely
 cclog --all-projects --clear-cache   # drop and rebuild cache
+```
+
+### Debug logging
+
+```sh
+cclog --debug export session.jsonl   # enable tracing output
+cclog --debug --all-projects         # verbose logging for all-projects mode
 ```
 
 ### Combined pages only (skip per-session HTML)
@@ -165,10 +190,10 @@ cclog export session.jsonl --open-browser
 - [x] Phase 3 — Single-session HTML export with full tool rendering
 - [x] Phase 4 — Markdown export with detail levels and compact mode
 - [x] Phase 5 — Project hierarchy + master index + SQLite cache
+- [x] Phase 6 — CLI parity (date filters, pagination, `--debug`, `--tui` stub)
 
 Coming next:
 
-- [ ] Phase 6 — CLI parity (date filters, `--open-browser` polish, image modes)
 - [ ] Phase 7 — JavaScript filter shim for HTML output
 - [ ] Phase 8 — Release packaging, `cargo install`, crates.io publish
 

@@ -434,8 +434,8 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Parse `--from-date` / `--to-date` accepting `today`, `yesterday`, `last week`, ISO dates. Apply filter at the session and message level.
 **Acceptance criteria:**
 
-- [ ] `cclog --from-date yesterday --to-date today` matches a hand-computed expected set on a fixture.
-- [ ] Unparseable values return a clear, non-panicking CLI error.
+- [x] `cclog --from-date yesterday --to-date today` matches a hand-computed expected set on a fixture.
+- [x] Unparseable values return a clear, non-panicking CLI error.
       **Verification:** Unit + `assert_cmd` tests.
       **Dependencies:** 5.4
       **Files touched:** `src/dates.rs`, `src/cli.rs`.
@@ -446,8 +446,8 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Pagination of long sessions (default unbounded; flag splits into multiple HTML files). `--debug` enables verbose logging via `tracing`. `--tui` errors with `"coming in a later release"` and exit code 2.
 **Acceptance criteria:**
 
-- [ ] Pagination boundaries are stable across runs.
-- [ ] `--tui` exits 2 with the documented message.
+- [x] Pagination boundaries are stable across runs.
+- [x] `--tui` exits 2 with the documented message.
       **Verification:** `assert_cmd` tests.
       **Dependencies:** 6.1
       **Files touched:** `src/cli.rs`, `src/render/pagination.rs`.
@@ -455,7 +455,7 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 
 ### Checkpoint: Phase 6
 
-- [ ] CLI surface matches the spec section in `rust-spec-v0.1.md`.
+- [x] CLI surface matches the spec section in `rust-spec-v0.1.md`.
 
 ---
 

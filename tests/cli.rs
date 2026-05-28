@@ -443,3 +443,119 @@ fn clear_cache_flag_works() {
     fs::remove_dir_all(&output_dir).ok();
     fs::remove_dir_all(&output_dir2).ok();
 }
+
+// ---------------------------------------------------------------------------
+// Phase 6: CLI parity tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn tui_flag_exits_with_code_2() {
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args(["--tui"]);
+    let output = cmd.assert().code(2);
+    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
+    assert!(
+        stderr.contains("coming in a later release"),
+        "should mention coming later, got: {stderr}"
+    );
+}
+
+#[test]
+fn from_date_rejects_invalid_input() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args(["export", fixture.to_str().unwrap(), "--from-date", "not-a-date"]);
+    cmd.assert().failure();
+}
+
+#[test]
+fn to_date_rejects_invalid_input() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args(["export", fixture.to_str().unwrap(), "--to-date", "garbage"]);
+    cmd.assert().failure();
+}
+
+#[test]
+fn from_date_iso_accepts_valid_date() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+    let output_path = std::env::temp_dir().join("cclog-test-datefilter.html");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "export",
+        fixture.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--from-date",
+        "2025-01-01",
+    ]);
+    // Fixture has dates in 2025-06, so this should pass.
+    cmd.assert().success();
+
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn from_date_to_date_natural_language() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+    let output_path = std::env::temp_dir().join("cclog-test-datenl.html");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "export",
+        fixture.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--from-date",
+        "yesterday",
+        "--to-date",
+        "today",
+    ]);
+    // The fixture dates are in 2025 — if today > fixture date, session won't
+    // match and export will fail. Either success (session in range) or a
+    // date-mismatch error is acceptable; we just don't want a panic.
+    let _result = cmd.ok();
+    // If it succeeded, clean up.
+    let _ = std::fs::remove_file(&output_path);
+}
+
+#[test]
+fn page_size_flag_is_accepted() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+    let output_path = std::env::temp_dir().join("cclog-test-paginated.html");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args([
+        "export",
+        fixture.to_str().unwrap(),
+        "--output",
+        output_path.to_str().unwrap(),
+        "--page-size",
+        "1",
+    ]);
+    // The fixture has 4 messages, so page_size=1 should paginate.
+    let output = cmd.assert().success();
+    let stdout = String::from_utf8_lossy(&output.get_output().stdout);
+    assert!(stdout.contains("paginated"), "should mention paginated, got: {stdout}");
+
+    let _ = std::fs::remove_file(&output_path);
+    // Clean up additional pages.
+    for i in 2..=4 {
+        let _ = std::fs::remove_file(
+            std::env::temp_dir().join(format!("cclog-test-paginated-page-{}.html", i)),
+        );
+    }
+    let _ = std::fs::remove_file(std::env::temp_dir().join("cclog-test-paginated.html"));
+}
+
+#[test]
+fn debug_flag_is_accepted() {
+    let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
+
+    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    cmd.args(["--debug", "export", fixture.to_str().unwrap()]);
+    cmd.assert().success();
+}

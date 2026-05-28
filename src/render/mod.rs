@@ -4,6 +4,7 @@ pub mod html;
 pub mod index;
 pub mod markdown;
 pub mod markdown_export;
+pub mod pagination;
 pub mod project;
 pub mod tools;
 
