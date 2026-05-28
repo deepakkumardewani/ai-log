@@ -20,6 +20,7 @@ Thumbs.db
 # Test fixtures under tests/fixtures/ are tracked separately.
 /*.html
 tests/cclog-out/
+tests/fixtures/cclog-cache.db
 
 # Editor / merge backups
 *.bak
@@ -29,3 +30,6 @@ tests/cclog-out/
 # Coverage tooling (cargo-llvm-cov, tarpaulin)
 *.profraw
 /coverage/
+
+
+.cargo/
