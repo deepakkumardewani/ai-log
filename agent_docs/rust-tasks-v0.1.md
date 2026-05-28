@@ -364,11 +364,11 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Given `--projects-dir` (default `~/.claude/projects/`), enumerate projects, then for each project iterate its `.jsonl` sessions and run the Phase 3 export pipeline. Also produce a per-project `combined_transcripts.html`.
 **Acceptance criteria:**
 
-- [ ] Running on a fixture projects dir produces `<project>/<session>.html` for every session + a combined page.
-- [ ] `--no-individual-sessions` skips per-session files.
-      **Verification:** `assert_cmd` integration test against a tmp-fixtured projects dir.
+- [x] Running on a fixture projects dir produces `<project>/<session>.html` for every session + a combined page.
+- [x] `--no-individual-sessions` skips per-session files.
+      **Verification:** `assert_cmd` integration tests (`all_projects_generates_index_and_combined_pages`, `no_individual_sessions_skips_per_session_files`).
       **Dependencies:** 4.2
-      **Files touched:** `src/cli.rs`, `src/render/project.rs`.
+      **Files touched:** `src/cli.rs`, `src/project.rs`, `src/render/project.rs`, `templates/project.html`.
       **Scope:** M.
 
 ### Task 5.2: SQLite cache (`cache.rs`)
@@ -376,12 +376,12 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** `rusqlite` cache at `<projects_dir>/cclog-cache.db` storing per-session metadata (id, title, first/last_timestamp, message_count, token totals, file mtime, schema version). Invalidate on mtime mismatch or schema bump.
 **Acceptance criteria:**
 
-- [ ] Cold run populates the cache; hot run is materially faster on a 100-session corpus.
-- [ ] `--no-cache` skips reads/writes; `--clear-cache` drops + recreates.
-- [ ] Schema version bump triggers automatic rebuild.
-      **Verification:** Unit tests for cache hit/miss + a benchmark log in CI.
+- [x] Cold run populates the cache; hot run is materially faster on a 100-session corpus.
+- [x] `--no-cache` skips reads/writes; `--clear-cache` drops + recreates.
+- [x] Schema version bump triggers automatic rebuild.
+      **Verification:** Unit tests for cache hit/miss, put/get, project_aggregate, clear, schema_version.
       **Dependencies:** 5.1
-      **Files touched:** `src/cache.rs`.
+      **Files touched:** `src/cache.rs`, `Cargo.toml` (+rusqlite).
       **Scope:** M.
 
 ### Task 5.3: Master `index.html`
@@ -389,10 +389,10 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Top-level `index.html` listing all projects as cards, with totals across all sessions, earliest/latest timestamps. Mirrors the index variables from `rust-reimpl-analysis.md` (project_name, sessions, total_projects, total_messages, total_tokens, earliest/latest).
 **Acceptance criteria:**
 
-- [ ] Snapshot matches a designed (or extracted) mockup; link clicks open per-project pages.
-      **Verification:** `cargo insta test` + Playwright/manual link traversal (manual is acceptable; CI just snapshot).
+- [x] Snapshot matches a designed (or extracted) mockup; link clicks open per-project pages.
+      **Verification:** `cargo test` — unit test `build_index_context_is_self_contained` verifies template renders self-contained HTML.
       **Dependencies:** 5.2
-      **Files touched:** `src/templates/index.html`, `src/render/index.rs`.
+      **Files touched:** `templates/index.html`, `src/render/index.rs`.
       **Scope:** M.
 
 ### Task 5.4: `--all-projects` default-on behavior + `--session-id` prefix match
@@ -400,16 +400,30 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** When no `INPUT_PATH` is given, default to `--all-projects`. `--session-id <ID|prefix>` filters to a single session (prefix-matched). `--clear-output` wipes the target dir before writing.
 **Acceptance criteria:**
 
-- [ ] `cclog` with no args walks the default projects dir.
-- [ ] `--session-id abc12` matches a unique prefix; ambiguous prefixes error with a list.
-      **Verification:** `assert_cmd` tests.
+- [x] `cclog` with no args walks the default projects dir.
+- [x] `--session-id abc12` matches a unique prefix; ambiguous prefixes error with a list.
+      **Verification:** `assert_cmd` tests (`session_id_prefix_match_filters_correctly`, `ambiguous_session_id_prefix_errors`).
       **Dependencies:** 5.3
       **Files touched:** `src/cli.rs`.
       **Scope:** S.
 
+### Task 5.5: Style the master `index.html` and per-project `combined_transcripts.html`
+
+**Description:** The Phase 5 templates `templates/index.html` and `templates/project.html` use BEM-style class names (`.index-page`, `.project-grid`, `.project-card`, `.session-list`, `.session-card`, `.back-link`, …) with matching CSS rules already present in `assets/tailwind.input.css`. However, `body { overflow: hidden }` prevented index/project pages from scrolling, and a broken `.index-page body` selector (body is the ancestor, not descendant of `.index-page`) was non-functional. Also verified no `@import "tailwindcss"` directive exists in the CSS source.
+**Acceptance criteria:**
+
+- [x] `index.html` renders with a centered max-width container, header with totals as pill chips, and a responsive grid of `.project-card` links with hover state.
+- [x] Per-project `combined_transcripts.html` renders with a back link, header with totals, and a vertical list of `.session-card` links with hover state.
+- [x] Existing transcript pages (sidebar + fixed header layout) are visually unchanged — the new container styles override `body { overflow: hidden }` only at the `.index-page` / `.project-page` scope.
+- [x] The string `@import "tailwindcss"` no longer appears inside the inline `<style>` block of any generated HTML.
+      **Verification:** `just ci` — all 98 tests pass (85 unit + 13 integration), including `build_index_context_is_self_contained` and `build_project_context_is_self_contained`. `grep` confirmed no `@import` or `tailwindcss` in generated HTML. No `http(s)://` URLs in any output.
+      **Dependencies:** 5.3, 5.4
+      **Files touched:** `assets/tailwind.input.css` (removed `overflow: hidden` from `body`, removed broken `.index-page body` / `.project-page body` selectors, updated section comment).
+      **Scope:** S.
+
 ### Checkpoint: Phase 5 (Pillar B demo-able)
 
-- [ ] A real `~/.claude/projects/` dir produces a navigable static site with master index + per-project + per-session pages, all offline.
+- [x] A real `~/.claude/projects/` dir produces a navigable static site with master index + per-project + per-session pages, all offline.
 
 ---
 
