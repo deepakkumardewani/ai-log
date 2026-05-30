@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -8,6 +8,9 @@
 /* Embedded Material-3 CSS — self-contained, no CDN. */
 {{ css|safe }}
 </style>
+<script>
+(function(){var t=localStorage.getItem('cclog-theme');if(t){document.documentElement.setAttribute('data-theme',t);}else if(window.matchMedia('(prefers-color-scheme: light)').matches){document.documentElement.setAttribute('data-theme','light');}})();
+</script>
 </head>
 <body>
 {% include "components/header.html" %}
@@ -61,6 +64,9 @@
     if (card) card.classList.toggle('is-collapsed');
   });
 })();
+</script>
+<script>
+{{ transcript_js|safe }}
 </script>
 </body>
 </html>

@@ -9,9 +9,30 @@ use crate::model::tool::ToolInput;
 // Card wrapper
 // ---------------------------------------------------------------------------
 
-/// Body length (chars) at or above which a card's body becomes
-/// expandable with a "Show more" toggle.
+/// Visible text length (chars) at or above which a card's body becomes
+/// expandable with a "Show more" toggle. Measured on stripped text so
+/// short content wrapped in heavy markup (e.g. a thinking block) does
+/// not falsely trigger the toggle.
 const EXPAND_THRESHOLD: usize = 300;
+
+/// Count visible (non-tag) characters in an HTML fragment.
+///
+/// This gives a far better proxy for "how much will the user actually
+/// read" than `body.len()`, which inflates with every wrapping `<div>`
+/// or class attribute.
+fn visible_text_length(html: &str) -> usize {
+    let mut count = 0usize;
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
 
 /// Wrap content in a message card with a colored header.
 ///
@@ -36,7 +57,7 @@ pub fn wrap_card(
         format!(r#"<span class="message-card-meta">{}</span>"#, meta)
     };
 
-    let body_html = if body.len() >= EXPAND_THRESHOLD {
+    let body_html = if visible_text_length(body) >= EXPAND_THRESHOLD {
         format!(
             r#"<div class="body-collapsible" data-collapsible>
   <div class="body-collapsible-content">{body}</div>

@@ -35,6 +35,37 @@
   --font-display: 'Space Grotesk', sans-serif;
 }
 
+/* Material Design 3 — Light theme tokens. */
+:root[data-theme="light"] {
+  --surface: #FFFFFF;
+  --surface-container: #F0F0F0;
+  --surface-container-high: #E5E5E5;
+  --surface-container-highest: #D9D9D9;
+  --surface-container-low: #F5F5F5;
+  --surface-container-lowest: #FFFFFF;
+  --on-surface: #1A1A1A;
+  --on-surface-variant: #555555;
+  --primary: #6200EE;
+  --on-primary: #FFFFFF;
+  --primary-container: #E8DEF8;
+  --on-primary-container: #21005D;
+  --secondary: #018786;
+  --on-secondary: #FFFFFF;
+  --secondary-container: #CEF0EF;
+  --on-secondary-container: #00201F;
+  --error: #B3261E;
+  --on-error: #FFFFFF;
+  --error-container: #F9DEDC;
+  --on-error-container: #410E0B;
+  --outline: #79747E;
+  --border: #E0E0E0;
+  --background: #FFFFFF;
+  --muted: #8B8B8B;
+  --indigo-accent: #6366F1;
+  --tertiary: #D97706;
+  --sidebar-bg: #F5F5F5;
+}
+
 /* ===================================================================
    CSS Reset & Base
    =================================================================== */
@@ -164,6 +195,8 @@ body {
   padding: 6px 16px; cursor: pointer;
   border-left: 2px solid transparent;
   transition: background 0.15s;
+  text-decoration: none;
+  color: inherit;
 }
 .sidebar-nav-item:hover { background: #1E1E1E; }
 .sidebar-nav-item--active { background: #1E1E1E; border-left-color: #F59E0B; }
@@ -187,6 +220,10 @@ body {
   text-decoration: none; cursor: pointer;
 }
 .sidebar-toc-item:hover { color: var(--on-surface); }
+.sidebar-toc-item--active {
+  color: var(--primary);
+  font-weight: 600;
+}
 .sidebar-toc-icon { font-size: 12px; }
 
 /* Sidebar file explorer */
@@ -224,6 +261,7 @@ body {
   flex-direction: column;
   gap: 16px;
   min-height: calc(100vh - 64px);
+  scroll-behavior: smooth;
 }
 
 /* ===================================================================
@@ -262,6 +300,25 @@ body {
 }
 .filter-chip:hover { background: var(--surface-container-high); }
 .filter-chip--active { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+/* Ensure button filter chips inherit font and have no native button chrome. */
+button.filter-chip,
+button.sidebar-chip {
+  font-family: inherit;
+  line-height: inherit;
+}
+button.sidebar-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 999px;
+  background: #1E1E1E; color: #8B8B8B;
+  border: none;
+  font-size: 11px; white-space: nowrap; cursor: pointer;
+}
+button.sidebar-chip:hover { background: #2A2A2A; }
+button.sidebar-chip--active,
+button.sidebar-chip.filter-chip--active,
+button.sidebar-chip[aria-pressed="true"] {
+  background: rgba(245, 158, 11, 0.15); color: #F59E0B;
+}
 
 /* ===================================================================
    Message List
@@ -271,6 +328,7 @@ body {
   max-width: 800px; width: 100%; margin: 0 auto;
   padding: 12px 0 24px;
 }
+.message-card-wrapper[hidden] { display: none !important; }
 
 /* ===================================================================
    Message Cards
@@ -526,7 +584,7 @@ body {
 .thinking-block > .thinking-summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   padding: 8px 12px;
   cursor: pointer;
@@ -559,6 +617,7 @@ body {
   font-size: 11px;
   color: var(--muted);
   white-space: nowrap;
+  margin-left: auto;
 }
 .thinking-content {
   padding: 12px 14px;
@@ -839,3 +898,95 @@ body {
 }
 .status-bar-active { color: var(--secondary); }
 .status-bar-stats { display: flex; gap: 12px; }
+
+/* ===================================================================
+   Tool Result
+   =================================================================== */
+.tool-result {
+  padding: 4px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+  margin: 4px 0;
+}
+.tool-result--error {
+  border-left-color: var(--error);
+}
+.tool-result-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  margin-bottom: 2px;
+}
+.tool-result-content {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--on-surface);
+  word-break: break-word;
+}
+
+/* ===================================================================
+   Todo + Question widgets
+   =================================================================== */
+.todo-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 2px 0; font-size: 13px;
+}
+.todo-content { flex: 1; }
+.todo-priority {
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+}
+.status-chip {
+  font-family: var(--font-mono); font-size: 10px;
+  padding: 1px 6px; border-radius: 4px; white-space: nowrap;
+}
+.question-block { margin-bottom: 10px; }
+.question-text { font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+.question-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.question-option {
+  display: inline-block;
+  padding: 3px 10px;
+  background: var(--surface-container);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--on-surface);
+}
+
+/* ===================================================================
+   Tool Write Preview
+   =================================================================== */
+.tool-write-preview {
+  font-family: var(--font-mono); font-size: 12px;
+  line-height: 1.5; color: var(--on-surface);
+  white-space: pre-wrap; word-break: break-word;
+  max-height: 300px; overflow-y: auto;
+}
+
+/* ===================================================================
+   MultiEdit
+   =================================================================== */
+.multiedit-op { margin-bottom: 12px; }
+.multiedit-op:last-child { margin-bottom: 0; }
+
+/* ===================================================================
+   Tool IO footer
+   =================================================================== */
+.tool-io-footer {
+  font-family: var(--font-mono); font-size: 10px;
+  color: var(--muted); margin-top: 4px;
+}
+
+/* ===================================================================
+   Image placeholder
+   =================================================================== */
+.image-placeholder {
+  padding: 20px; text-align: center;
+  background: var(--surface-container-lowest);
+  border: 1px dashed var(--border);
+  border-radius: 2px;
+  color: var(--muted);
+  font-family: var(--font-mono); font-size: 12px;
+}

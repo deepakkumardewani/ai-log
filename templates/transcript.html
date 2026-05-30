@@ -5,18 +5,10 @@
 <div class="filter-bar">
   <div class="filter-search">
     <span class="filter-search-icon">&#x1F50D;</span>
-    <input type="text" placeholder="Search session..." class="filter-search-input">
+    <input type="text" placeholder="Search session..." class="filter-search-input" aria-label="Search messages">
   </div>
   <div class="filter-divider"></div>
-  <div class="filter-chips">
-    <span class="filter-chip filter-chip--active">User</span>
-    <span class="filter-chip">Assistant</span>
-    <span class="filter-chip">Bash</span>
-    <span class="filter-chip">Read</span>
-    <span class="filter-chip">Write</span>
-    <span class="filter-chip">Edit</span>
-    <span class="filter-chip">Thinking</span>
-  </div>
+  <div class="filter-chips" role="group" aria-label="Filter by message type"></div>
 </div>
 
 <!-- Message Cards -->

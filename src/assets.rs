@@ -1,6 +1,6 @@
 //! Compile-time asset embedding.
 //!
-//! CSS and font files are embedded into the binary at build time,
+//! CSS, JS, and font files are embedded into the binary at build time,
 //! ensuring the generated HTML is fully self-contained with zero CDN references.
 
 /// The compiled (or fallback) Tailwind CSS.
@@ -9,3 +9,8 @@
 /// Tailwind CLI is available, the CSS is processed through the full Tailwind pipeline;
 /// otherwise, the raw Material-3 custom properties are used as a fallback.
 pub const CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/styles.css"));
+
+/// Client-side interactivity script (filter chips, search, scroll-spy, theme).
+///
+/// Inlined into every transcript HTML page. Under 2 KB gzipped.
+pub const TRANSCRIPT_JS: &str = include_str!("../assets/transcript.js");

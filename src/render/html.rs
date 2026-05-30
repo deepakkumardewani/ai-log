@@ -27,6 +27,7 @@ use super::tools;
 #[template(path = "transcript.html")]
 pub struct TranscriptContext {
     pub css: String,
+    pub transcript_js: String,
     pub page_title: String,
     pub session_title: String,
     pub session_date: String,
@@ -37,16 +38,18 @@ pub struct TranscriptContext {
     pub token_total: String,
     pub duration: String,
     pub is_active: bool,
-    pub toc_items: Vec<TocItem>,
+    pub sidebar_nav_items: Vec<SidebarNavItem>,
     pub file_tree: Vec<FileTreeGroup>,
     pub tool_counts: Vec<ToolCount>,
     /// Pre-rendered message card HTML blocks, in display order.
     pub message_cards: Vec<MessageCard>,
 }
 
-pub struct TocItem {
+pub struct SidebarNavItem {
     pub label: String,
     pub icon: String,
+    pub dot_class: String,
+    pub time: String,
     pub anchor: String,
 }
 
@@ -66,8 +69,11 @@ pub struct MessageCard {
     pub kind_class: String,
     /// Pre-rendered inner HTML (safe).
     pub html: String,
-    /// Anchor ID for TOC linking.
+    /// Anchor ID for sidebar linking.
     pub anchor: String,
+    /// Optional plain-text preview of the message body, used by the
+    /// sidebar to label user/assistant turns by content instead of role.
+    pub snippet: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +83,7 @@ pub struct MessageCard {
 /// Build a [`TranscriptContext`] from a parsed session and its aggregate.
 pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> TranscriptContext {
     let message_cards = build_message_cards(session);
-    let toc_items = build_toc(&message_cards);
+    let sidebar_nav_items = build_sidebar_nav(&message_cards);
     let file_tree = build_file_tree(agg);
     let tool_counts = build_tool_counts(agg);
     let duration = format_duration(agg);
@@ -93,6 +99,7 @@ pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> 
 
     TranscriptContext {
         css,
+        transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
         page_title: format!("{} — cclog", agg.session_id),
         session_title: agg.summaries.first().cloned().unwrap_or_else(|| agg.session_id.clone()),
         session_date,
@@ -101,7 +108,7 @@ pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> 
         token_total,
         duration,
         is_active: agg.is_active,
-        toc_items,
+        sidebar_nav_items,
         file_tree,
         tool_counts,
         message_cards,
@@ -123,7 +130,6 @@ pub fn build_context_paginated(
         .take(page.message_range.len())
         .collect();
 
-    let toc_items = build_toc(&page_cards);
     let file_tree = if page.is_first { build_file_tree(agg) } else { Vec::new() };
     let tool_counts = if page.is_first { build_tool_counts(agg) } else { Vec::new() };
     let duration = format_duration(agg);
@@ -137,6 +143,7 @@ pub fn build_context_paginated(
 
     TranscriptContext {
         css,
+        transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
         page_title: format!("{} (page {}/{}) — cclog", agg.session_id, page.number, page.total),
         session_title: agg.summaries.first().cloned().unwrap_or_else(|| agg.session_id.clone()),
         session_date,
@@ -145,7 +152,7 @@ pub fn build_context_paginated(
         token_total,
         duration,
         is_active: agg.is_active,
-        toc_items,
+        sidebar_nav_items: if page.is_first { build_sidebar_nav(&page_cards) } else { Vec::new() },
         file_tree,
         tool_counts,
         message_cards: page_cards,
@@ -192,13 +199,14 @@ fn dfs_messages(
     visited.insert(uuid, true);
 
     if let Some(node) = session.messages.get(&uuid) {
-        if let Some((kind_class, html)) = render_entry(&node.entry) {
+        if let Some((kind_class, html, snippet)) = render_entry(&node.entry) {
             *idx += 1;
             let anchor = format!("msg-{}", idx);
             cards.push(MessageCard {
                 kind_class,
                 html,
                 anchor,
+                snippet,
             });
         }
 
@@ -208,7 +216,7 @@ fn dfs_messages(
     }
 }
 
-fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
+fn render_entry(entry: &TranscriptEntry) -> Option<(String, String, Option<String>)> {
     match entry {
         TranscriptEntry::User(ue) => {
             let ts = format_ts(&ue.common.timestamp);
@@ -227,9 +235,11 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                         false,
                         &ts,
                     ),
+                    None,
                 ));
             }
             let body = render_user_body(&ue.message);
+            let snippet = first_text_snippet(&ue.message);
             Some((
                 "message-user".to_string(),
                 tools::wrap_card(
@@ -240,6 +250,7 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                     false,
                     &ts,
                 ),
+                snippet,
             ))
         }
         TranscriptEntry::Assistant(ae) => {
@@ -266,6 +277,7 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                 .map(|item| render_content_item(item, &ae.message.model, &ae.common.timestamp))
                 .collect::<Vec<_>>()
                 .join("\n");
+            let snippet = first_text_snippet(&ae.message);
             Some((
                 "message-assistant".to_string(),
                 tools::wrap_card(
@@ -276,6 +288,7 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                     false,
                     &meta,
                 ),
+                snippet,
             ))
         }
         TranscriptEntry::Summary(se) => {
@@ -291,10 +304,17 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                     false,
                     &ts,
                 ),
+                None,
             ))
         }
-        TranscriptEntry::System(se) => Some(render_system_entry(se)),
-        TranscriptEntry::HookAttachment(he) => Some(render_hook_attachment(he)),
+        TranscriptEntry::System(se) => {
+            let (k, h) = render_system_entry(se);
+            Some((k, h, None))
+        }
+        TranscriptEntry::HookAttachment(he) => {
+            let (k, h) = render_hook_attachment(he);
+            Some((k, h, None))
+        }
         TranscriptEntry::AwaySummary(asum) => {
             let ts = format_ts(&asum.common.timestamp);
             let body = asum.summary.clone().unwrap_or_else(|| "(no summary text)".to_string());
@@ -308,6 +328,7 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                     false,
                     &ts,
                 ),
+                None,
             ))
         }
         TranscriptEntry::QueueOperation(qe) => {
@@ -327,11 +348,39 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String)> {
                     false,
                     &ts,
                 ),
+                None,
             ))
         }
         // file-history-snapshot, last-prompt, permission-mode etc. are session
         // metadata, not messages — drop them rather than showing empty cards.
         TranscriptEntry::Unknown { .. } => None,
+    }
+}
+
+/// Extract a short, single-line preview from the first text block in a message.
+fn first_text_snippet(msg: &crate::model::content::Message) -> Option<String> {
+    let text = msg.content.iter().find_map(|c| match c {
+        ContentItem::Text { text } => {
+            let t = text.trim();
+            if t.is_empty() {
+                None
+            } else {
+                Some(t)
+            }
+        }
+        _ => None,
+    })?;
+    Some(truncate_snippet(text, 60))
+}
+
+/// Collapse whitespace and truncate to `max_chars` graphemes-ish (chars).
+fn truncate_snippet(s: &str, max_chars: usize) -> String {
+    let one_line: String = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if one_line.chars().count() <= max_chars {
+        one_line
+    } else {
+        let truncated: String = one_line.chars().take(max_chars).collect();
+        format!("{}…", truncated.trim_end())
     }
 }
 
@@ -569,26 +618,64 @@ fn render_thinking_block(thinking: &str, parent_ts: &chrono::DateTime<chrono::Ut
 // Sidebar helpers
 // ---------------------------------------------------------------------------
 
-fn build_toc(cards: &[MessageCard]) -> Vec<TocItem> {
-    cards
-        .iter()
-        .map(|c| {
-            let label = c.kind_class.strip_prefix("message-").unwrap_or(&c.kind_class).to_string();
-            let icon = match label.as_str() {
-                "user" => "person",
-                "assistant" => "smart_toy",
-                "summary" => "description",
-                "system" => "settings",
-                s if s.starts_with("tool") => "terminal",
-                _ => "help",
-            };
-            TocItem {
-                label,
-                icon: icon.to_string(),
-                anchor: c.anchor.clone(),
-            }
-        })
-        .collect()
+/// Build the sidebar "Turns" list.
+///
+/// The session-history sidebar is grouped, not 1:1 with message cards:
+/// consecutive entries with the same `kind_class` (e.g. five Hook
+/// attachments in a row, or a long tool-result tail) collapse into a
+/// single row with a `(×N)` count. User and assistant turns get a short
+/// content snippet as the label when one is available, so the sidebar
+/// reads as a real conversation outline instead of a wall of role names.
+fn build_sidebar_nav(cards: &[MessageCard]) -> Vec<SidebarNavItem> {
+    let mut items: Vec<SidebarNavItem> = Vec::new();
+    let mut i = 0;
+    while i < cards.len() {
+        let kind = cards[i].kind_class.as_str();
+        // Find run of consecutive cards with the same kind.
+        let mut j = i + 1;
+        while j < cards.len() && cards[j].kind_class == kind {
+            j += 1;
+        }
+        let run_len = j - i;
+        let (role_label, icon, dot_class) = kind_visuals(kind);
+
+        // Prefer a content snippet for user/assistant single-card rows so
+        // the sidebar actually distinguishes turns by what was said.
+        let label = match (kind, run_len, cards[i].snippet.as_deref()) {
+            ("message-user" | "message-assistant", 1, Some(s)) if !s.is_empty() => s.to_string(),
+            (_, 1, _) => role_label.to_string(),
+            (_, n, _) => format!("{role_label} ×{n}"),
+        };
+
+        items.push(SidebarNavItem {
+            label,
+            icon: icon.to_string(),
+            dot_class: dot_class.to_string(),
+            time: String::new(),
+            anchor: cards[i].anchor.clone(),
+        });
+        i = j;
+    }
+    items
+}
+
+fn kind_visuals(kind: &str) -> (&'static str, &'static str, &'static str) {
+    match kind {
+        "message-user" => ("User", "&#x1F464;", "sidebar-nav-dot--user"),
+        "message-assistant" => ("Assistant", "&#x1F916;", "sidebar-nav-dot--assistant"),
+        "message-tool-Bash" => ("Bash", "&#x2328;", "sidebar-nav-dot--tool"),
+        "message-tool-Read" => ("Read", "&#x1F4D6;", "sidebar-nav-dot--tool"),
+        "message-tool-Write" => ("Write", "&#x1F4DD;", "sidebar-nav-dot--tool"),
+        "message-tool-Edit" => ("Edit", "&#x1F4DD;", "sidebar-nav-dot--tool"),
+        "message-tool-MultiEdit" => ("MultiEdit", "&#x1F4DD;", "sidebar-nav-dot--tool"),
+        "message-thinking" => ("Thinking", "&#x1F9E0;", "sidebar-nav-dot--thinking"),
+        "message-tool-result" => ("Tool Result", "&#x2328;", "sidebar-nav-dot--tool"),
+        "message-summary" => ("Summary", "&#x1F4CB;", "sidebar-nav-dot--assistant"),
+        "message-system" => ("System", "&#x2699;", "sidebar-nav-dot--file"),
+        "message-hook" => ("Hook", "&#x1F50C;", "sidebar-nav-dot--file"),
+        "message-away" => ("Away", "&#x1F4A4;", "sidebar-nav-dot--file"),
+        _ => ("Tool", "&#x2328;", "sidebar-nav-dot--tool"),
+    }
 }
 
 fn build_file_tree(agg: &SessionAggregate) -> Vec<FileTreeGroup> {
@@ -645,8 +732,48 @@ fn format_time(agg: &SessionAggregate) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn stub_context() -> TranscriptContext {
+    let cards = vec![
+        MessageCard {
+            kind_class: "message-user".into(),
+            html: tools::wrap_card(
+                "User",
+                "message-dot--user",
+                "message-card-header--user",
+                &tools::render_user_message_text("use the /build command to compile"),
+                false,
+                "",
+            ),
+            anchor: "msg-1".into(),
+            snippet: Some("use the /build command to compile".into()),
+        },
+        MessageCard {
+            kind_class: "message-assistant".into(),
+            html: tools::wrap_card(
+                "Assistant",
+                "message-dot--assistant",
+                "message-card-header--assistant",
+                &markdown::render("I will run the build command."),
+                false,
+                "",
+            ),
+            anchor: "msg-2".into(),
+            snippet: Some("I will run the build command.".into()),
+        },
+        MessageCard {
+            kind_class: "message-tool-Bash".into(),
+            html: tools::render_tool_use(
+                "Bash",
+                &serde_json::json!({"command": "cargo build"}),
+                "t1",
+            ),
+            anchor: "msg-3".into(),
+            snippet: None,
+        },
+    ];
+    let sidebar_nav = build_sidebar_nav(&cards);
     TranscriptContext {
         css: crate::assets::CSS.to_string(),
+        transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
         page_title: "Claude Code Session — cclog".to_string(),
         session_title: "Implement Connect4 Rules Engine".to_string(),
         session_date: "Oct 24".to_string(),
@@ -655,18 +782,7 @@ pub fn stub_context() -> TranscriptContext {
         token_total: "15.4k".to_string(),
         duration: "12m".to_string(),
         is_active: true,
-        toc_items: vec![
-            TocItem {
-                label: "user".into(),
-                icon: "person".into(),
-                anchor: "#msg-1".into(),
-            },
-            TocItem {
-                label: "assistant".into(),
-                icon: "smart_toy".into(),
-                anchor: "#msg-2".into(),
-            },
-        ],
+        sidebar_nav_items: sidebar_nav,
         file_tree: vec![FileTreeGroup {
             directory: "src/".into(),
             files: vec!["main.rs".into(), "lib.rs".into()],
@@ -681,41 +797,7 @@ pub fn stub_context() -> TranscriptContext {
                 count: 2,
             },
         ],
-        message_cards: vec![
-            MessageCard {
-                kind_class: "message-user".into(),
-                html: tools::wrap_card(
-                    "User",
-                    "message-dot--user",
-                    "message-card-header--user",
-                    &tools::render_user_message_text("use the /build command to compile"),
-                    false,
-                    "",
-                ),
-                anchor: "msg-1".into(),
-            },
-            MessageCard {
-                kind_class: "message-assistant".into(),
-                html: tools::wrap_card(
-                    "Assistant",
-                    "message-dot--assistant",
-                    "message-card-header--assistant",
-                    &markdown::render("I will run the build command."),
-                    false,
-                    "",
-                ),
-                anchor: "msg-2".into(),
-            },
-            MessageCard {
-                kind_class: "message-tool-Bash".into(),
-                html: tools::render_tool_use(
-                    "Bash",
-                    &serde_json::json!({"command": "cargo build"}),
-                    "t1",
-                ),
-                anchor: "msg-3".into(),
-            },
-        ],
+        message_cards: cards,
     }
 }
 
