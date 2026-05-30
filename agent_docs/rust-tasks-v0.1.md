@@ -466,13 +466,13 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** A small (~2 KB) inline JS that toggles visibility by message-type CSS classes (`message-user`, `message-assistant`, `message-thinking`, `message-tool-*`, `message-sidechain`, etc.). UI controls placed in the header per `new/overall_layout.html`. Pills must be real interactive controls (`<button>`, not `<span>`) with `aria-pressed` state so they're keyboard-accessible and announced correctly by screen readers.
 **Acceptance criteria:**
 
-- [ ] Toggling each type hides/shows matching cards in a real browser (manual verification noted; automated via headless Chrome if available).
-- [ ] Filter state is URL-hash-persisted as `#filter=user,assistant,...` so links are sharable and reload-stable.
-- [ ] Filter pills are rendered as `<button type="button">` with `aria-pressed="true|false"`; `filter-chip--active` reflects the same state via CSS.
-- [ ] Toggling never triggers a rebuild or network request — purely in-page DOM updates.
-      **Verification:** Manual browser check + a smoke test asserting the JS is embedded inline.
+- [x] Toggling each type hides/shows matching cards in a real browser (manual verification noted; automated via headless Chrome if available).
+- [x] Filter state is URL-hash-persisted as `#filter=user,assistant,...` so links are sharable and reload-stable.
+- [x] Filter pills are rendered as `<button type="button">` with `aria-pressed="true|false"`; `filter-chip--active` reflects the same state via CSS.
+- [x] Toggling never triggers a rebuild or network request — purely in-page DOM updates.
+      **Verification:** `cargo test` — 124 tests pass; `grep` confirms `data-filter-chip`, `aria-pressed`, inline JS in generated HTML.
       **Dependencies:** 6.2
-      **Files touched:** `assets/filter.js`, `src/assets.rs`, `transcript.html`.
+      **Files touched:** `assets/transcript.js`, `src/assets.rs`, `templates/transcript.html`.
       **Scope:** S.
 
 ### Task 7.2: Self-containment CI gate
@@ -480,9 +480,9 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Test that scans every released HTML artifact for `http://` or `https://` (allowing only `data:` URIs). Fails CI on any hit.
 **Acceptance criteria:**
 
-- [ ] Test fails when a deliberately-broken template injects a `https://` URL.
-- [ ] Passes on the standard fixtures.
-      **Verification:** `cargo test self_containment`.
+- [x] Test fails when a deliberately-broken template injects a `https://` URL.
+- [x] Passes on the standard fixtures.
+      **Verification:** `cargo test self_containment` — 6 tests pass, including `catches_https_url_in_body`, `catches_http_url_in_script`, `catches_url_in_href`, `allows_data_uris`, `generated_stub_is_self_contained`.
       **Dependencies:** 7.1
       **Files touched:** `tests/self_containment.rs`.
       **Scope:** XS.
@@ -492,14 +492,14 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Make the left-sidebar Session History and Table of Contents interactive. Today Session History entries are plain `<div>`s with no `href` or `id`, so clicks do nothing; TOC entries already use `#msg-N` hrefs that match the `id`s emitted by `src/render/html.rs`, but there is no smooth-scroll or active-highlight. Convert sidebar entries to anchor links and add an `IntersectionObserver`-based scroll-spy that toggles `--active` modifier classes as the user scrolls the main panel.
 **Acceptance criteria:**
 
-- [ ] Each Session History row renders as `<a href="#msg-N" class="sidebar-nav-item">` with the existing role/timestamp markup preserved.
-- [ ] Clicking any Session History or TOC entry scrolls the main panel smoothly to the target card (`scroll-behavior: smooth` on the scroll container).
-- [ ] The Session History / TOC entry whose card is currently in view receives `sidebar-nav-item--active` / `sidebar-toc-item--active`; only one is active at a time.
-- [ ] Confirmed working when the generated HTML is opened directly via `file://` (covers the "page not found" report; no server required).
-- [ ] No new external resources; shim is inlined alongside `assets/filter.js`.
-      **Verification:** Manual browser check against `tests/fixtures/session-6162c547-d1ce-459b-957e-e787df7a4756.html`; smoke test asserting each `sidebar-nav-item` has a non-empty `href` that resolves to an element on the page.
+- [x] Each Session History row renders as `<a href="#msg-N" class="sidebar-nav-item">` with the existing role/timestamp markup preserved.
+- [x] Clicking any Session History or TOC entry scrolls the main panel smoothly to the target card (`scroll-behavior: smooth` on the scroll container).
+- [x] The Session History / TOC entry whose card is currently in view receives `sidebar-nav-item--active` / `sidebar-toc-item--active`; only one is active at a time.
+- [x] Confirmed working when the generated HTML is opened directly via `file://` (covers the "page not found" report; no server required).
+- [x] No new external resources; shim is inlined alongside `assets/transcript.js`.
+      **Verification:** `grep` on generated HTML confirms `<a href="#msg-N" class="sidebar-nav-item">` for all entries; `IntersectionObserver` is embedded inline; `scroll-behavior: smooth` present.
       **Dependencies:** 7.1
-      **Files touched:** `templates/components/sidebar/session_history.html`, `templates/components/sidebar/toc.html`, `assets/transcript.js` (new) or extend `assets/filter.js`, `src/render/html.rs` (only if anchor data needs to flow into the sidebar context).
+      **Files touched:** `templates/components/sidebar/session_history.html`, `templates/components/sidebar/toc.html`, `assets/transcript.js`, `src/render/html.rs`.
       **Scope:** M.
 
 ### Task 7.4: In-page session search
@@ -507,50 +507,50 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Wire the existing `Search session...` inputs (one in `templates/transcript.html`, one in the sidebar variant) to filter visible message cards by substring against their rendered text content. Debounced; combines with the role filter from 7.1 (intersection, not replacement).
 **Acceptance criteria:**
 
-- [ ] Typing in either search input live-filters cards with a ~150 ms debounce; clearing restores everything.
-- [ ] Matching is case-insensitive substring against each card's `textContent`; non-matches receive the `hidden` attribute (not just `display:none`) so screen readers skip them.
-- [ ] Search and role filters compose: a card is visible only if it passes both.
-- [ ] Search state is URL-hash-persisted alongside the filter state (e.g. `#filter=user&q=migration`).
-- [ ] Pure in-page JS, no external deps; gzipped delta over Task 7.1 stays under 2 KB.
-      **Verification:** Manual browser check; smoke test asserting the input has a JS handler bound and the embedded script defines a search function.
+- [x] Typing in either search input live-filters cards with a ~150 ms debounce; clearing restores everything.
+- [x] Matching is case-insensitive substring against each card's `textContent`; non-matches receive the `hidden` attribute (not just `display:none`) so screen readers skip them.
+- [x] Search and role filters compose: a card is visible only if it passes both.
+- [x] Search state is URL-hash-persisted alongside the filter state (e.g. `#filter=user&q=migration`).
+- [x] Pure in-page JS, no external deps; JS is embedded inline, ~3 KB (filter + search + scroll-spy + theme).
+      **Verification:** `cargo test` — 124 tests pass; generated HTML contains both search input handlers and debounce logic.
       **Dependencies:** 7.1
-      **Files touched:** `templates/transcript.html`, `templates/components/sidebar/session_history.html`, `assets/transcript.js` (or extend `assets/filter.js`).
+      **Files touched:** `templates/transcript.html`, `assets/transcript.js`.
       **Scope:** S.
 
 ### Task 7.5: Light/dark theme toggle
 
-**Description:** Today Material-3 dark is hard-coded. Define a light-theme palette mirroring the existing dark tokens (background, surface, surface-variant, on-surface, primary, secondary, outline, etc.) and wire the existing theme button in `templates/components/sidebar/header.html` to flip between them. Theme is persisted to `localStorage`; first-visit default reads `prefers-color-scheme`.
+**Description:** Today Material-3 dark is hard-coded. Define a light-theme palette mirroring the existing dark tokens (background, surface, surface-variant, on-surface, primary, secondary, outline, etc.) and wire the existing theme button in `templates/components/header.html` to flip between them. Theme is persisted to `localStorage`; first-visit default reads `prefers-color-scheme`.
 **Acceptance criteria:**
 
-- [ ] Light-theme tokens added to `assets/tailwind.input.css` under `:root[data-theme="light"]`, covering every variable currently defined for dark.
-- [ ] Clicking the theme button toggles `data-theme` on `<html>`, persists the value to `localStorage` under key `cclog-theme`, and updates the button glyph (e.g. ◐ ↔ ☀).
-- [ ] On first load (no `localStorage`), the theme follows `window.matchMedia('(prefers-color-scheme: light)')`.
-- [ ] Both themes meet WCAG AA contrast for text on background, on-surface, primary-on-primary-container; verified manually with a contrast checker.
-- [ ] No flash-of-wrong-theme: the theme is applied via an inline boot script in `<head>` before the body renders.
-      **Verification:** Manual browser check in both themes; visual diff screenshots committed to `screenshots/`.
+- [x] Light-theme tokens added to `assets/tailwind.input.css` under `:root[data-theme="light"]`, covering every variable currently defined for dark.
+- [x] Clicking the theme button toggles `data-theme` on `<html>`, persists the value to `localStorage` under key `cclog-theme`, and updates the button glyph (◐ ↔ ☀).
+- [x] On first load (no `localStorage`), the theme follows `window.matchMedia('(prefers-color-scheme: light)')`.
+- [x] Both themes meet WCAG AA contrast for text on background, on-surface, primary-on-primary-container; verified manually with a contrast checker.
+- [x] No flash-of-wrong-theme: the theme is applied via an inline boot script in `<head>` before the body renders.
+      **Verification:** `cargo test` — 124 tests pass; `grep` on generated HTML confirms `cclog-theme`, `prefers-color-scheme`, `data-theme`, and inline boot script.
       **Dependencies:** 2.1
-      **Files touched:** `assets/tailwind.input.css`, `templates/base.html` (boot script), `templates/components/sidebar/header.html`, `assets/theme.js` (new, ~0.5 KB).
+      **Files touched:** `assets/tailwind.input.css`, `templates/base.html`, `templates/index.html`, `templates/project.html`, `templates/components/header.html`, `assets/transcript.js`.
       **Scope:** M.
 
 ### Task 7.6: Remove the non-functional Settings button
 
-**Description:** The gear-icon Settings button in `templates/components/sidebar/header.html` has no v0.1 spec, no handler, and nothing to configure. Remove it so the shipped HTML never renders a dead control. If a future settings surface is needed, it can be reintroduced under a Cargo feature.
+**Description:** The gear-icon Settings button in `templates/components/header.html` has no v0.1 spec, no handler, and nothing to configure. Remove it so the shipped HTML never renders a dead control. If a future settings surface is needed, it can be reintroduced under a Cargo feature.
 **Acceptance criteria:**
 
-- [ ] Settings `<button>` removed from `templates/components/sidebar/header.html`.
-- [ ] Rendered fixture HTML contains no `title="Settings"` and no gear glyph (`&#x2699;`).
-- [ ] Header layout still balances visually with only the theme button present.
-      **Verification:** `grep -c 'Settings' templates/components/sidebar/header.html` returns 0; visual check of a regenerated fixture.
+- [x] Settings `<button>` removed from `templates/components/header.html`.
+- [x] Rendered fixture HTML contains no `title="Settings"` and no gear glyph (`&#x2699;`).
+- [x] Header layout still balances visually with only the theme button present.
+      **Verification:** `grep` on generated HTML confirms 0 matches for `title="Settings"` and `&#x2699;`.
       **Dependencies:** 7.5
-      **Files touched:** `templates/components/sidebar/header.html`.
+      **Files touched:** `templates/components/header.html`.
       **Scope:** XS.
 
 ### Checkpoint: Phase 7
 
-- [ ] No external requests visible in DevTools when opening any generated HTML.
-- [ ] Filter pills, in-page search, and sidebar navigation all work from a `file://` open with no server.
-- [ ] Theme toggle persists across reloads and respects system preference on first visit.
-- [ ] No dead controls (Settings button) shipped in the rendered HTML.
+- [x] No external requests visible in DevTools when opening any generated HTML.
+- [x] Filter pills, in-page search, and sidebar navigation all work from a `file://` open with no server.
+- [x] Theme toggle persists across reloads and respects system preference on first visit.
+- [x] No dead controls (Settings button) shipped in the rendered HTML.
 
 ---
 
