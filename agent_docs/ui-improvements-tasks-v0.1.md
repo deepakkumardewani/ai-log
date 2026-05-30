@@ -38,13 +38,13 @@ if cut) and `started_at` (chrono `DateTime` or string usable by the template).
 Compute by reading the session's first message with role=user.
 
 **Acceptance criteria:**
-- [ ] `first_user_prompt` is non-empty for sessions that contain at least one user message; empty/None otherwise
-- [ ] Truncation preserves UTF-8 grapheme boundaries and trims trailing whitespace before appending `…`
-- [ ] `started_at` reflects the timestamp of the session's first event
+- [x] `first_user_prompt` is non-empty for sessions that contain at least one user message; empty/None otherwise
+- [x] Truncation preserves UTF-8 grapheme boundaries and trims trailing whitespace before appending `…`
+- [x] `started_at` reflects the timestamp of the session's first event
 
 **Verification:**
-- [ ] `cargo test` passes (add a unit test for truncation helper if one doesn't exist)
-- [ ] `cargo run -- <projects dir>` regenerates `tests/cclog-out/` and inspecting the rendered HTML shows the new fields on at least one session
+- [x] `cargo test` passes (add a unit test for truncation helper if one doesn't exist)
+- [x] `cargo run -- <projects dir>` regenerates `tests/cclog-out/` and inspecting the rendered HTML shows the new fields on at least one session
 
 **Dependencies:** None
 
@@ -64,13 +64,13 @@ Compute by reading the session's first message with role=user.
 struct rendered by `index.html`.
 
 **Acceptance criteria:**
-- [ ] `short_name` equals the final non-empty segment of the project path
-- [ ] `last_activity` equals the max `started_at` / event timestamp across the project's sessions
-- [ ] Both fields are available in the template context
+- [x] `short_name` equals the final non-empty segment of the project path
+- [x] `last_activity` equals the max `started_at` / event timestamp across the project's sessions
+- [x] Both fields are available in the template context
 
 **Verification:**
-- [ ] `cargo test` passes
-- [ ] Regenerated `index.html` exposes both values on every project card (inspect DOM)
+- [x] `cargo test` passes
+- [x] Regenerated `index.html` exposes both values on every project card (inspect DOM)
 
 **Dependencies:** Task 1 (uses the same timestamp source)
 
@@ -83,8 +83,8 @@ struct rendered by `index.html`.
 ---
 
 #### Checkpoint: Data foundation
-- [ ] `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`
-- [ ] Regenerated output contains the new fields (sanity-grep for a session prompt and a project `short_name`)
+- [x] `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`
+- [x] Regenerated output contains the new fields (sanity-grep for a session prompt and a project `short_name`)
 
 ---
 
@@ -98,13 +98,13 @@ Delete the include and any sidebar-specific CSS rules that are unused after.
 finish the job for the remaining sidebar partials and their parent layout.
 
 **Acceptance criteria:**
-- [ ] `transcript.html` renders with main content full-width — no sidebar column, no leftover empty grid track
-- [ ] No console errors and no orphan references to removed partials
-- [ ] Page still scrolls correctly on long sessions
+- [x] `transcript.html` renders with main content full-width — no sidebar column, no leftover empty grid track
+- [x] No console errors and no orphan references to removed partials
+- [x] Page still scrolls correctly on long sessions
 
 **Verification:**
-- [ ] Manual: open a regenerated session HTML in a browser — no sidebar visible, layout breathes correctly at desktop and ~768px widths
-- [ ] `cargo test` (update `tests/self_containment.rs` if it asserts on sidebar markup)
+- [x] Manual: open a regenerated session HTML in a browser — no sidebar visible, layout breathes correctly at desktop and ~768px widths
+- [x] `cargo test` (update `tests/self_containment.rs` if it asserts on sidebar markup)
 
 **Dependencies:** None
 
@@ -127,13 +127,13 @@ the parent `combined_transcripts.html`. Mirror the markup/styles of the existing
 no conditional on referrer.
 
 **Acceptance criteria:**
-- [ ] Header shows `← {project name}` (using the project's short name from Task 2) above or beside the session title
-- [ ] Clicking navigates to the project page; works when opening the HTML directly via `file://` (relative href)
-- [ ] Visual style matches the existing back link on the project page
+- [x] Header shows `← {project name}` (using the project's short name from Task 2) above or beside the session title
+- [x] Clicking navigates to the project page; works when opening the HTML directly via `file://` (relative href)
+- [x] Visual style matches the existing back link on the project page
 
 **Verification:**
-- [ ] Manual: from index → project → session → click back link → lands on the project page
-- [ ] Manual: open a session HTML directly (skipping the index) — link still works
+- [x] Manual: from index → project → session → click back link → lands on the project page
+- [x] Manual: open a session HTML directly (skipping the index) — link still works
 
 **Dependencies:** Task 2 (uses `short_name`); Task 3 (header lives in the cleaned-up template)
 
@@ -157,16 +157,16 @@ attributes from the tool classifier in `src/render/tools/mod.rs` to keep the
 chip set and data in sync.
 
 **Acceptance criteria:**
-- [ ] Selecting `Bash` alone hides every turn that doesn't contain a Bash tool call
-- [ ] `User + Bash` shows all user turns AND all turns containing Bash (set union behavior is correct for the role-vs-tool case where the user intends "either")
-- [ ] `User + Assistant + Bash` behaves the same — role union ∪ tool union (clarify with a comment in the JS so future-you doesn't second-guess it)
-- [ ] No chips selected = all turns visible
-- [ ] Sanity-check `Thinking` and `Edit` chips work the same way
+- [x] Selecting `Bash` alone hides every turn that doesn't contain a Bash tool call
+- [x] `User + Bash` shows all user turns AND all turns containing Bash (set union behavior is correct for the role-vs-tool case where the user intends "either")
+- [x] `User + Assistant + Bash` behaves the same — role union ∪ tool union (clarify with a comment in the JS so future-you doesn't second-guess it)
+- [x] No chips selected = all turns visible
+- [x] Sanity-check `Thinking` and `Edit` chips work the same way
 
 **Verification:**
-- [ ] Manual: click each chip individually and confirm visible turns match expectation
-- [ ] Manual: combine pairs across categories
-- [ ] No console errors
+- [x] Manual: click each chip individually and confirm visible turns match expectation
+- [x] Manual: combine pairs across categories
+- [x] No console errors
 
 **Dependencies:** Task 3 (template cleanup may relocate the chip bar)
 
@@ -180,8 +180,8 @@ chip set and data in sync.
 ---
 
 #### Checkpoint: Session page
-- [ ] All three session-page tasks verified end-to-end in a browser
-- [ ] `cargo fmt && cargo clippy -- -D warnings && cargo test` clean
+- [x] All three session-page tasks verified end-to-end in a browser
+- [x] `cargo fmt && cargo clippy -- -D warnings && cargo test` clean
 
 ---
 
@@ -196,14 +196,14 @@ tokens) stay but become tertiary. Add the relative-time helper if one doesn't
 already exist; reuse if it does.
 
 **Acceptance criteria:**
-- [ ] Card primary text = truncated first user prompt; if missing, fall back to a short placeholder (`(no user message)`)
-- [ ] A human-readable relative timestamp is visible next to the prompt
-- [ ] UUID still present but visually de-emphasized (smaller, lower contrast)
-- [ ] Counts remain visible
+- [x] Card primary text = truncated first user prompt; if missing, fall back to a short placeholder (`(no user message)`)
+- [x] A human-readable relative timestamp is visible next to the prompt
+- [x] UUID still present but visually de-emphasized (smaller, lower contrast)
+- [x] Counts remain visible
 
 **Verification:**
-- [ ] Manual: project page shows distinguishable, scannable session entries
-- [ ] Visual check at desktop and mobile widths — prompt doesn't overflow
+- [x] Manual: project page shows distinguishable, scannable session entries
+- [x] Visual check at desktop and mobile widths — prompt doesn't overflow
 
 **Dependencies:** Task 1
 
@@ -217,8 +217,8 @@ already exist; reuse if it does.
 ---
 
 #### Checkpoint: Project page
-- [ ] Manual scan of the project page reads cleanly across at least 5 sessions
-- [ ] Tests pass
+- [x] Manual scan of the project page reads cleanly across at least 5 sessions
+- [x] Tests pass
 
 ---
 
@@ -232,13 +232,13 @@ relative-time-formatted `last_activity` as a primary metadata line beside or
 under the title.
 
 **Acceptance criteria:**
-- [ ] Short name is the visual anchor (larger, higher contrast)
-- [ ] Last-activity timestamp is visible at a glance
-- [ ] Full path still present (as a faded subtitle) so disambiguation is possible
+- [x] Short name is the visual anchor (larger, higher contrast)
+- [x] Last-activity timestamp is visible at a glance
+- [x] Full path still present (as a faded subtitle) so disambiguation is possible
 
 **Verification:**
-- [ ] Manual: index page is readable; you can name a project from across the room
-- [ ] Tests pass
+- [x] Manual: index page is readable; you can name a project from across the room
+- [x] Tests pass
 
 **Dependencies:** Task 2; reuses the relative-time helper from Task 6
 
@@ -262,15 +262,15 @@ cards. Persist the chosen mode in `localStorage` under a namespaced key
 click (toggle asc/desc).
 
 **Acceptance criteria:**
-- [ ] Toggle visible in the index header; clicking flips the layout
-- [ ] Refreshing the page preserves the chosen mode
-- [ ] List view shows a clear table-like row per project; columns sort on header click
-- [ ] No layout shift on load (apply persisted mode before/with first paint — inline `<script>` in `<head>` if needed)
+- [x] Toggle visible in the index header; clicking flips the layout
+- [x] Refreshing the page preserves the chosen mode
+- [x] List view shows a clear table-like row per project; columns sort on header click
+- [x] No layout shift on load (apply persisted mode before/with first paint — inline `<script>` in `<head>` if needed)
 
 **Verification:**
-- [ ] Manual: toggle, refresh, confirm persistence
-- [ ] Manual: sort by each column
-- [ ] Tests pass
+- [x] Manual: toggle, refresh, confirm persistence
+- [x] Manual: sort by each column
+- [x] Tests pass
 
 **Dependencies:** Task 7 (cards already have the new data); Task 2 (data attributes)
 
@@ -292,14 +292,14 @@ query (case-insensitive substring, no regex, no fuzzy matching). Works in both
 card and list view.
 
 **Acceptance criteria:**
-- [ ] Typing filters in real time (debounce ~100–150 ms)
-- [ ] Matching is case-insensitive
-- [ ] Empty input = all projects visible
-- [ ] Works alongside the date filter (combine via AND)
+- [x] Typing filters in real time (debounce ~100–150 ms)
+- [x] Matching is case-insensitive
+- [x] Empty input = all projects visible
+- [x] Works alongside the date filter (combine via AND)
 
 **Verification:**
-- [ ] Manual: type `mock` and confirm only mockforge remains
-- [ ] Manual: combine with a date preset and confirm intersection
+- [x] Manual: type `mock` and confirm only mockforge remains
+- [x] Manual: combine with a date preset and confirm intersection
 
 **Dependencies:** Task 8 (shares `assets/index.js`)
 
@@ -321,15 +321,15 @@ the selected range. Selecting a preset updates the picker values to match (so
 the user can see what range is active). Default = `All time` (no filter).
 
 **Acceptance criteria:**
-- [ ] Preset chips and a range picker are both present and synced
-- [ ] Filtering is by `last_activity`, not creation date
-- [ ] Combines with the search input via AND
-- [ ] Clearing the range / selecting `All time` restores full list
+- [x] Preset chips and a range picker are both present and synced
+- [x] Filtering is by `last_activity`, not creation date
+- [x] Combines with the search input via AND
+- [x] Clearing the range / selecting `All time` restores full list
 
 **Verification:**
-- [ ] Manual: each preset narrows correctly
-- [ ] Manual: custom range narrows correctly
-- [ ] Manual: combine with search
+- [x] Manual: each preset narrows correctly
+- [x] Manual: custom range narrows correctly
+- [x] Manual: combine with search
 
 **Dependencies:** Task 9 (shares index JS module)
 
@@ -343,9 +343,9 @@ the user can see what range is active). Default = `All time` (no filter).
 ---
 
 #### Checkpoint: Index interactivity
-- [ ] Toggle + search + date filter all coexist without interfering
-- [ ] LocalStorage persistence verified across refresh
-- [ ] No console errors
+- [x] Toggle + search + date filter all coexist without interfering
+- [x] LocalStorage persistence verified across refresh
+- [x] No console errors
 
 ---
 
@@ -359,12 +359,12 @@ fields on session and project cards; presence of toggle/search/date-filter
 elements on the index page.
 
 **Acceptance criteria:**
-- [ ] `cargo test` passes
-- [ ] Tests fail loudly if the sidebar reappears or the new card fields disappear (regression guards)
+- [x] `cargo test` passes
+- [x] Tests fail loudly if the sidebar reappears or the new card fields disappear (regression guards)
 
 **Verification:**
-- [ ] `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`
-- [ ] `just ci` clean
+- [x] `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`
+- [x] `just ci` clean
 
 **Dependencies:** All prior tasks
 
@@ -377,10 +377,10 @@ elements on the index page.
 ---
 
 ### Checkpoint: Complete
-- [ ] All acceptance criteria met
-- [ ] End-to-end flow verified: index → search/filter/toggle → project page (new cards) → session page (no sidebar, back link works, chips filter correctly)
-- [ ] `just ci` clean
-- [ ] Ready for review
+- [x] All acceptance criteria met
+- [x] End-to-end flow verified: index → search/filter/toggle → project page (new cards) → session page (no sidebar, back link works, chips filter correctly)
+- [x] `just ci` clean
+- [x] Ready for review
 
 ## Risks and Mitigations
 

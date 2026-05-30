@@ -18,6 +18,77 @@ use crate::session::Session;
 use super::markdown;
 use super::tools;
 
+/// Maximum character length for `first_user_prompt` before truncation.
+const FIRST_PROMPT_MAX_CHARS: usize = 120;
+
+/// Find the first user prompt in a session by walking the DAG in DFS order
+/// from roots. Returns the truncated text of the first user message with
+/// actual text content, or `None` if no user message has text.
+pub fn find_first_user_prompt(session: &Session) -> Option<String> {
+    let mut visited: HashMap<Uuid, bool> = HashMap::new();
+
+    for root_id in &session.root_message_ids {
+        if let Some(prompt) = dfs_find_first_user(*root_id, session, &mut visited) {
+            return Some(truncate_prompt(&prompt));
+        }
+    }
+    None
+}
+
+fn dfs_find_first_user(
+    uuid: Uuid,
+    session: &Session,
+    visited: &mut HashMap<Uuid, bool>,
+) -> Option<String> {
+    if visited.contains_key(&uuid) {
+        return None;
+    }
+    visited.insert(uuid, true);
+
+    if let Some(node) = session.messages.get(&uuid) {
+        if let TranscriptEntry::User(ue) = &node.entry {
+            let text = ue
+                .message
+                .content
+                .iter()
+                .filter_map(|c| match c {
+                    ContentItem::Text { text } => {
+                        let t = text.trim();
+                        if t.is_empty() {
+                            None
+                        } else {
+                            Some(t.to_string())
+                        }
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            if !text.is_empty() {
+                return Some(text);
+            }
+        }
+
+        for child_id in &node.children {
+            if let Some(prompt) = dfs_find_first_user(*child_id, session, visited) {
+                return Some(prompt);
+            }
+        }
+    }
+    None
+}
+
+/// Truncate a prompt string to ~120 chars, preserving UTF-8 grapheme
+/// boundaries and trimming trailing whitespace before appending `…`.
+fn truncate_prompt(s: &str) -> String {
+    if s.chars().count() <= FIRST_PROMPT_MAX_CHARS {
+        s.to_string()
+    } else {
+        let truncated: String = s.chars().take(FIRST_PROMPT_MAX_CHARS).collect();
+        format!("{}…", truncated.trim_end())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Askama context
 // ---------------------------------------------------------------------------
@@ -43,6 +114,12 @@ pub struct TranscriptContext {
     pub tool_counts: Vec<ToolCount>,
     /// Pre-rendered message card HTML blocks, in display order.
     pub message_cards: Vec<MessageCard>,
+    /// First user prompt, truncated to ~120 chars. Useful as a session
+    /// description when no summary title exists.
+    pub first_user_prompt: Option<String>,
+    /// Project directory name for the back-link in the header.
+    /// `None` when the session is exported standalone (no project context).
+    pub project_name: Option<String>,
 }
 
 pub struct SidebarNavItem {
@@ -74,6 +151,10 @@ pub struct MessageCard {
     /// Optional plain-text preview of the message body, used by the
     /// sidebar to label user/assistant turns by content instead of role.
     pub snippet: Option<String>,
+    /// Filter category: "user", "assistant", or "" for tool/system cards.
+    pub filter_role: String,
+    /// Filter tools: space-separated tool names (e.g. "Bash Read").
+    pub filter_tools: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -81,7 +162,15 @@ pub struct MessageCard {
 // ---------------------------------------------------------------------------
 
 /// Build a [`TranscriptContext`] from a parsed session and its aggregate.
-pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> TranscriptContext {
+///
+/// `project_name` enables the `← {project}` back-link in the header.
+/// Pass `None` for standalone single-session exports.
+pub fn build_context(
+    session: &Session,
+    agg: &SessionAggregate,
+    css: String,
+    project_name: Option<&str>,
+) -> TranscriptContext {
     let message_cards = build_message_cards(session);
     let sidebar_nav_items = build_sidebar_nav(&message_cards);
     let file_tree = build_file_tree(agg);
@@ -96,6 +185,8 @@ pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> 
         + agg.total_cache_creation_tokens
         + agg.total_cache_read_tokens;
     let token_total = format_token_count(raw_total);
+
+    let first_user_prompt = find_first_user_prompt(session);
 
     TranscriptContext {
         css,
@@ -112,6 +203,8 @@ pub fn build_context(session: &Session, agg: &SessionAggregate, css: String) -> 
         file_tree,
         tool_counts,
         message_cards,
+        first_user_prompt,
+        project_name: project_name.map(|s| s.to_string()),
     }
 }
 
@@ -122,6 +215,7 @@ pub fn build_context_paginated(
     agg: &SessionAggregate,
     css: String,
     page: &super::pagination::Page,
+    project_name: Option<&str>,
 ) -> TranscriptContext {
     let all_cards = build_message_cards(session);
     let page_cards: Vec<MessageCard> = all_cards
@@ -141,6 +235,8 @@ pub fn build_context_paginated(
         + agg.total_cache_read_tokens;
     let token_total = format_token_count(raw_total);
 
+    let first_user_prompt = if page.is_first { find_first_user_prompt(session) } else { None };
+
     TranscriptContext {
         css,
         transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
@@ -156,6 +252,8 @@ pub fn build_context_paginated(
         file_tree,
         tool_counts,
         message_cards: page_cards,
+        first_user_prompt,
+        project_name: project_name.map(|s| s.to_string()),
     }
 }
 
@@ -202,11 +300,14 @@ fn dfs_messages(
         if let Some((kind_class, html, snippet)) = render_entry(&node.entry) {
             *idx += 1;
             let anchor = format!("msg-{}", idx);
+            let (filter_role, filter_tools) = filter_attrs(&kind_class);
             cards.push(MessageCard {
                 kind_class,
                 html,
                 anchor,
                 snippet,
+                filter_role,
+                filter_tools,
             });
         }
 
@@ -381,6 +482,20 @@ fn truncate_snippet(s: &str, max_chars: usize) -> String {
     } else {
         let truncated: String = one_line.chars().take(max_chars).collect();
         format!("{}…", truncated.trim_end())
+    }
+}
+
+/// Extract role and tool names from a `kind_class` for filter data attributes.
+fn filter_attrs(kind_class: &str) -> (String, String) {
+    match kind_class {
+        "message-user" => ("user".to_string(), String::new()),
+        "message-assistant" => ("assistant".to_string(), String::new()),
+        "message-tool-Bash" => (String::new(), "Bash".to_string()),
+        "message-tool-Read" => (String::new(), "Read".to_string()),
+        "message-tool-Write" => (String::new(), "Write".to_string()),
+        "message-tool-Edit" => (String::new(), "Edit".to_string()),
+        "message-tool-MultiEdit" => (String::new(), "Edit".to_string()),
+        _ => (String::new(), String::new()),
     }
 }
 
@@ -745,6 +860,8 @@ pub fn stub_context() -> TranscriptContext {
             ),
             anchor: "msg-1".into(),
             snippet: Some("use the /build command to compile".into()),
+            filter_role: "user".into(),
+            filter_tools: String::new(),
         },
         MessageCard {
             kind_class: "message-assistant".into(),
@@ -758,6 +875,8 @@ pub fn stub_context() -> TranscriptContext {
             ),
             anchor: "msg-2".into(),
             snippet: Some("I will run the build command.".into()),
+            filter_role: "assistant".into(),
+            filter_tools: String::new(),
         },
         MessageCard {
             kind_class: "message-tool-Bash".into(),
@@ -768,6 +887,8 @@ pub fn stub_context() -> TranscriptContext {
             ),
             anchor: "msg-3".into(),
             snippet: None,
+            filter_role: String::new(),
+            filter_tools: "Bash".into(),
         },
     ];
     let sidebar_nav = build_sidebar_nav(&cards);
@@ -798,6 +919,8 @@ pub fn stub_context() -> TranscriptContext {
             },
         ],
         message_cards: cards,
+        first_user_prompt: Some("use the /build command to compile".to_string()),
+        project_name: Some("demo-project".to_string()),
     }
 }
 
@@ -827,7 +950,7 @@ mod tests {
         let result = parse_reader(Cursor::new(&jsonl)).unwrap();
         let session = build_session(&result.entries);
         let agg = aggregate(&session);
-        let ctx = build_context(&session, &agg, crate::assets::CSS.to_string());
+        let ctx = build_context(&session, &agg, crate::assets::CSS.to_string(), None);
 
         assert!(ctx.message_count > 0);
         assert!(!ctx.message_cards.is_empty());
@@ -835,5 +958,90 @@ mod tests {
         let kinds: Vec<&str> = ctx.message_cards.iter().map(|c| c.kind_class.as_str()).collect();
         assert!(kinds.contains(&"message-user"));
         assert!(kinds.contains(&"message-assistant"));
+    }
+
+    #[test]
+    fn truncate_prompt_short_string_unchanged() {
+        let s = "Hello, Claude!";
+        assert_eq!(truncate_prompt(s), "Hello, Claude!");
+    }
+
+    #[test]
+    fn truncate_prompt_long_string_truncated_with_ellipsis() {
+        let s = "a".repeat(150);
+        let result = truncate_prompt(&s);
+        assert!(result.ends_with('…'));
+        assert!(result.chars().count() <= 121); // 120 + ellipsis
+    }
+
+    #[test]
+    fn truncate_prompt_preserves_utf8_boundaries() {
+        // Emoji + text to verify char-level (not byte-level) truncation
+        let s = "🚀".repeat(200);
+        let result = truncate_prompt(&s);
+        assert!(result.chars().count() <= 121);
+        // All chars should be valid UTF-8 (verified by String type)
+    }
+
+    #[test]
+    fn truncate_prompt_trims_trailing_whitespace() {
+        let mut s = String::from("Hello");
+        s.push_str(&" ".repeat(50));
+        s.push_str(&"a".repeat(100));
+        let result = truncate_prompt(&s);
+        assert!(!result.starts_with("Hello …"));
+    }
+
+    #[test]
+    fn find_first_user_prompt_linear_session() {
+        use crate::parser::parse_reader;
+        use crate::session::build_session;
+        use std::io::Cursor;
+
+        let jsonl = crate::tests::fixture_linear_session();
+        let result = parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        let prompt = find_first_user_prompt(&session);
+        assert!(prompt.is_some());
+        assert_eq!(prompt.unwrap(), "Build the project");
+    }
+
+    #[test]
+    fn find_first_user_prompt_no_user_returns_none() {
+        use std::io::Cursor;
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"assistant","uuid":"{a1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}]}}}}"#
+        );
+        let result = crate::parser::parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = crate::session::build_session(&result.entries);
+        let prompt = find_first_user_prompt(&session);
+        assert!(prompt.is_none());
+    }
+
+    #[test]
+    fn filter_attrs_extracts_role_and_tools() {
+        assert_eq!(filter_attrs("message-user"), ("user".into(), "".into()));
+        assert_eq!(filter_attrs("message-assistant"), ("assistant".into(), "".into()));
+        assert_eq!(filter_attrs("message-tool-Bash"), ("".into(), "Bash".into()));
+        assert_eq!(filter_attrs("message-tool-Read"), ("".into(), "Read".into()));
+        assert_eq!(filter_attrs("message-tool-Write"), ("".into(), "Write".into()));
+        assert_eq!(filter_attrs("message-tool-Edit"), ("".into(), "Edit".into()));
+        assert_eq!(filter_attrs("message-tool-MultiEdit"), ("".into(), "Edit".into()));
+        // Unknown kinds return empty strings.
+        assert_eq!(filter_attrs("message-system"), ("".into(), "".into()));
+        assert_eq!(filter_attrs("message-hook"), ("".into(), "".into()));
+    }
+
+    #[test]
+    fn stub_includes_project_name_and_filter_attrs() {
+        let ctx = stub_context();
+        let html = ctx.render().expect("stub template should render");
+        // Back link.
+        assert!(html.contains("demo-project"), "should contain project name");
+        assert!(html.contains("&larr;"), "should contain back arrow");
+        // Filter data attributes on message cards.
+        assert!(html.contains(r#"data-role="user""#), "should have data-role user");
+        assert!(html.contains(r#"data-tools="Bash""#), "should have data-tools Bash");
     }
 }

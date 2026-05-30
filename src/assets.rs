@@ -14,3 +14,8 @@ pub const CSS: &str = include_str!(concat!(env!("OUT_DIR"), "/styles.css"));
 ///
 /// Inlined into every transcript HTML page. Under 2 KB gzipped.
 pub const TRANSCRIPT_JS: &str = include_str!("../assets/transcript.js");
+
+/// Index page interactivity script (view toggle, search, date filter).
+///
+/// Inlined into the master index page. Under 2 KB gzipped.
+pub const INDEX_JS: &str = include_str!("../assets/index.js");

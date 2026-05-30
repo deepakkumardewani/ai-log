@@ -2,37 +2,50 @@
  * cclog transcript interactivity — self-contained, no external dependencies.
  *
  * Features:
- *   1. Message-type filter chips (Task 7.1)
- *   2. In-page session search (Task 7.4)
- *   3. Sidebar scroll-spy via IntersectionObserver (Task 7.3)
- *   4. Light/dark theme toggle (Task 7.5)
+ *   1. Message-type filter chips (OR within category, AND across categories)
+ *   2. In-page session search (150ms debounce)
+ *   3. Light/dark theme toggle (localStorage persistence)
  */
 (function () {
   'use strict';
 
   // -----------------------------------------------------------------------
   // 1. Message-type filter chips
+  //
+  // Filter model:
+  //   - Chips are grouped into categories: roles (User, Assistant) and
+  //     tools (Bash, Read, Write, Edit).
+  //   - OR within a category: selecting User + Assistant shows cards that
+  //     are EITHER user OR assistant.
+  //   - Union across categories: selecting User + Bash shows cards that
+  //     match the role selection OR the tool selection.  This is
+  //     deliberately NOT an intersection — a card is either a user card
+  //     or a tool card, never both, so AND-across-categories would
+  //     always produce an empty set for mixed role+tool selections.
+  //   - No chips selected = show everything.
+  //   - Filter reads data-role and data-tools attributes on each card
+  //     wrapper, rendered from the Rust tool classifier so the chip set
+  //     and data stay in sync.
   // -----------------------------------------------------------------------
 
-  var FILTER_TYPES = [
-    { key: 'user', label: 'User' },
-    { key: 'assistant', label: 'Assistant' },
-    { key: 'tool-Bash', label: 'Bash' },
-    { key: 'tool-Read', label: 'Read' },
-    { key: 'tool-Write', label: 'Write' },
-    { key: 'tool-Edit', label: 'Edit' },
-    { key: 'thinking', label: 'Thinking' }
+  var FILTER_CHIPS = [
+    { key: 'user',       label: 'User',      category: 'role' },
+    { key: 'assistant',  label: 'Assistant',  category: 'role' },
+    { key: 'Bash',       label: 'Bash',       category: 'tool' },
+    { key: 'Read',       label: 'Read',       category: 'tool' },
+    { key: 'Write',      label: 'Write',      category: 'tool' },
+    { key: 'Edit',       label: 'Edit',       category: 'tool' }
   ];
 
-  /** Read active filter set from URL hash, e.g. #filter=user,assistant */
+  /** Read active filter set from URL hash, e.g. #filter=user,Bash */
   function readFilterFromHash() {
     var m = window.location.hash.match(/filter=([^&]*)/);
     if (m && m[1]) {
       return m[1].split(',').reduce(function (acc, k) { acc[k] = true; return acc; }, {});
     }
-    // Default: all visible.
+    // Default: all chips active.
     var all = {};
-    FILTER_TYPES.forEach(function (f) { all[f.key] = true; });
+    FILTER_CHIPS.forEach(function (f) { all[f.key] = true; });
     return all;
   }
 
@@ -42,7 +55,7 @@
     var params = h ? h.replace(/^#/, '') : '';
     var parts = params.split('&').filter(Boolean);
     parts = parts.filter(function (p) { return !p.startsWith('filter='); });
-    if (keys.length < FILTER_TYPES.length) {
+    if (keys.length > 0 && keys.length < FILTER_CHIPS.length) {
       parts.push('filter=' + keys.join(','));
     }
     var searchQ = window.location.hash.match(/q=([^&]*)/);
@@ -53,17 +66,37 @@
   }
 
   function applyFilter(active) {
+    var anyActive = Object.keys(active).some(function (k) { return active[k]; });
     var wrappers = document.querySelectorAll('.message-card-wrapper');
     wrappers.forEach(function (w) {
-      var visible = false;
-      for (var i = 0; i < FILTER_TYPES.length; i++) {
-        var cls = 'message-' + FILTER_TYPES[i].key;
-        if (active[FILTER_TYPES[i].key] && w.classList.contains(cls)) {
-          visible = true;
-          break;
-        }
+      if (!anyActive) {
+        w.hidden = false;
+        return;
       }
-      w.hidden = !visible;
+      var role = w.getAttribute('data-role') || '';
+      var tools = (w.getAttribute('data-tools') || '').split(/\s+/).filter(Boolean);
+
+      // Does this card match any active role chip?
+      var roleMatch = active['user'] && role === 'user' ||
+                      active['assistant'] && role === 'assistant';
+      // Does this card match any active tool chip?
+      var toolMatch = tools.some(function (t) { return active[t]; });
+
+      // Union across categories: the card is visible if it matches a
+      // selected role OR a selected tool.  See the block comment at the
+      // top of this section for why this is union, not intersection.
+      var hasRoleSelection = active['user'] || active['assistant'];
+      var hasToolSelection = active['Bash'] || active['Read'] || active['Write'] || active['Edit'];
+
+      if (hasRoleSelection && hasToolSelection) {
+        w.hidden = !(roleMatch || toolMatch);
+      } else if (hasRoleSelection) {
+        w.hidden = !roleMatch;
+      } else if (hasToolSelection) {
+        w.hidden = !toolMatch;
+      } else {
+        w.hidden = false;
+      }
     });
   }
 
@@ -84,34 +117,27 @@
   function initFilterChips() {
     var active = readFilterFromHash();
 
-    // Convert existing .filter-chip spans to buttons in the main filter bar.
-    var chipContainers = document.querySelectorAll('.filter-chips, .sidebar-filter-chips');
-    chipContainers.forEach(function (container) {
-      // Clear existing content.
-      var existingChips = container.querySelectorAll('.filter-chip, .sidebar-chip');
-      existingChips.forEach(function (c) { c.remove(); });
+    // Build filter chip buttons in the main filter bar.
+    var chipContainer = document.querySelector('.filter-chips');
+    if (!chipContainer) return;
+    chipContainer.innerHTML = '';
 
-      FILTER_TYPES.forEach(function (ft) {
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = container.classList.contains('sidebar-filter-chips') ? 'sidebar-chip' : 'filter-chip';
-        btn.setAttribute('data-filter-chip', ft.key);
-        btn.setAttribute('aria-pressed', active[ft.key] ? 'true' : 'false');
-        if (active[ft.key]) btn.classList.add('filter-chip--active');
-        if (container.classList.contains('sidebar-filter-chips') && active[ft.key]) btn.classList.add('sidebar-chip--active');
-        btn.textContent = ft.label;
-        btn.addEventListener('click', function () {
-          var k = this.getAttribute('data-filter-chip');
-          active[k] = !active[k];
-          // At least one must stay active.
-          var anyActive = Object.keys(active).some(function (a) { return active[a]; });
-          if (!anyActive) { active[k] = true; return; }
-          applyFilter(active);
-          updateChipUI(active);
-          writeFilterToHash(active);
-        });
-        container.appendChild(btn);
+    FILTER_CHIPS.forEach(function (ft) {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'filter-chip';
+      btn.setAttribute('data-filter-chip', ft.key);
+      btn.setAttribute('aria-pressed', active[ft.key] ? 'true' : 'false');
+      if (active[ft.key]) btn.classList.add('filter-chip--active');
+      btn.textContent = ft.label;
+      btn.addEventListener('click', function () {
+        var k = this.getAttribute('data-filter-chip');
+        active[k] = !active[k];
+        applyFilter(active);
+        updateChipUI(active);
+        writeFilterToHash(active);
       });
+      chipContainer.appendChild(btn);
     });
 
     // Apply initial filter state.
@@ -164,13 +190,31 @@
   /** Combine search + filter: a card is visible only if it passes both. */
   function syncVisibility() {
     var active = readFilterFromHash();
+    var anyActive = Object.keys(active).some(function (k) { return active[k]; });
     var wrappers = document.querySelectorAll('.message-card-wrapper');
     wrappers.forEach(function (w) {
-      var filterVisible = false;
-      for (var i = 0; i < FILTER_TYPES.length; i++) {
-        if (active[FILTER_TYPES[i].key] && w.classList.contains('message-' + FILTER_TYPES[i].key)) {
+      var filterVisible;
+      if (!anyActive) {
+        filterVisible = true;
+      } else {
+        var role = w.getAttribute('data-role') || '';
+        var tools = (w.getAttribute('data-tools') || '').split(/\s+/).filter(Boolean);
+
+        var roleMatch = active['user'] && role === 'user' ||
+                        active['assistant'] && role === 'assistant';
+        var toolMatch = tools.some(function (t) { return active[t]; });
+
+        var hasRoleSelection = active['user'] || active['assistant'];
+        var hasToolSelection = active['Bash'] || active['Read'] || active['Write'] || active['Edit'];
+
+        if (hasRoleSelection && hasToolSelection) {
+          filterVisible = roleMatch || toolMatch;
+        } else if (hasRoleSelection) {
+          filterVisible = roleMatch;
+        } else if (hasToolSelection) {
+          filterVisible = toolMatch;
+        } else {
           filterVisible = true;
-          break;
         }
       }
       var searchVisible = !w.hasAttribute('data-search-hidden');
@@ -179,75 +223,26 @@
   }
 
   function initSearch() {
-    var inputs = document.querySelectorAll('.filter-search-input, .sidebar-search-input');
+    var input = document.querySelector('.filter-search-input');
+    if (!input) return;
     var initialTerm = readSearchFromHash();
     if (initialTerm) {
-      inputs.forEach(function (inp) { inp.value = initialTerm; });
+      input.value = initialTerm;
       applySearch(initialTerm);
     }
 
-    inputs.forEach(function (input) {
-      input.addEventListener('input', function () {
-        var term = this.value;
-        // Sync all search inputs.
-        document.querySelectorAll('.filter-search-input, .sidebar-search-input').forEach(function (inp) {
-          if (inp !== input) inp.value = term;
-        });
-        clearTimeout(searchDebounceTimer);
-        searchDebounceTimer = setTimeout(function () {
-          applySearch(term);
-          writeSearchToHash(term);
-        }, 150);
-      });
+    input.addEventListener('input', function () {
+      var term = this.value;
+      clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(function () {
+        applySearch(term);
+        writeSearchToHash(term);
+      }, 150);
     });
   }
 
   // -----------------------------------------------------------------------
-  // 3. Sidebar scroll-spy (IntersectionObserver)
-  // -----------------------------------------------------------------------
-
-  function initScrollSpy() {
-    var sidebarItems = document.querySelectorAll('.sidebar-nav-item[href]');
-    if (sidebarItems.length === 0) return;
-
-    var targets = [];
-    sidebarItems.forEach(function (item) {
-      var href = item.getAttribute('href');
-      if (href && href.startsWith('#msg-')) {
-        var el = document.getElementById(href.slice(1));
-        if (el) targets.push({ nav: item, card: el });
-      }
-    });
-    if (targets.length === 0) return;
-
-    var observer = new IntersectionObserver(function (entries) {
-      var visible = {};
-      entries.forEach(function (e) {
-        if (e.isIntersecting) visible[e.target.id] = true;
-      });
-
-      var firstVisible = null;
-      var minIdx = Infinity;
-      targets.forEach(function (t, i) {
-        if (visible[t.card.id] && i < minIdx) {
-          minIdx = i;
-          firstVisible = t;
-        }
-      });
-
-      sidebarItems.forEach(function (item) { item.classList.remove('sidebar-nav-item--active'); });
-      if (firstVisible) firstVisible.nav.classList.add('sidebar-nav-item--active');
-    }, {
-      root: document.getElementById('main-content'),
-      rootMargin: '-80px 0px -60% 0px',
-      threshold: 0
-    });
-
-    targets.forEach(function (t) { observer.observe(t.card); });
-  }
-
-  // -----------------------------------------------------------------------
-  // 4. Theme toggle
+  // 3. Theme toggle
   // -----------------------------------------------------------------------
 
   function initThemeToggle() {
@@ -277,7 +272,6 @@
   function init() {
     initFilterChips();
     initSearch();
-    initScrollSpy();
     initThemeToggle();
   }
 

@@ -14,7 +14,9 @@
 <!-- Message Cards -->
 <div class="message-list">
   {% for card in message_cards %}
-  <div id="{{ card.anchor }}" class="message-card-wrapper {{ card.kind_class }}">
+  <div id="{{ card.anchor }}" class="message-card-wrapper {{ card.kind_class }}"
+       data-role="{{ card.filter_role }}"
+       data-tools="{{ card.filter_tools }}">
     {{ card.html|safe }}
   </div>
   {% endfor %}

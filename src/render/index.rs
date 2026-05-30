@@ -10,6 +10,7 @@ use askama::Template;
 #[template(path = "index.html")]
 pub struct IndexContext {
     pub css: String,
+    pub index_js: String,
     pub version: String,
     pub total_projects: usize,
     pub total_sessions: u32,
@@ -21,9 +22,13 @@ pub struct IndexContext {
 
 pub struct ProjectCard {
     pub name: String,
+    pub short_name: String,
     pub session_count: u32,
     pub message_count: u32,
     pub token_total: String,
+    pub token_total_raw: u64,
+    pub last_activity: Option<String>,
+    pub last_activity_display: String,
 }
 
 /// Build an [`IndexContext`] from cached project metadata.
@@ -45,9 +50,17 @@ pub fn build_context(
         .into_iter()
         .map(|p| ProjectCard {
             name: p.name,
+            short_name: p.short_name,
             session_count: p.session_count,
             message_count: p.message_count,
             token_total: format_token_count(p.total_tokens),
+            token_total_raw: p.total_tokens,
+            last_activity_display: p
+                .last_activity
+                .as_deref()
+                .map(super::project::format_relative_time)
+                .unwrap_or_else(|| "—".to_string()),
+            last_activity: p.last_activity,
         })
         .collect();
 
@@ -55,6 +68,7 @@ pub fn build_context(
 
     IndexContext {
         css,
+        index_js: crate::assets::INDEX_JS.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         total_projects,
         total_sessions: project_cards.iter().map(|p| p.session_count).sum(),
@@ -104,6 +118,8 @@ mod tests {
                 session_count: 3,
                 message_count: 45,
                 total_tokens: 15000,
+                short_name: "test-proj".into(),
+                last_activity: Some("2025-06-15T12:00:00Z".into()),
             }],
             45,
             15000,
@@ -114,6 +130,24 @@ mod tests {
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("test-proj"));
         assert!(html.contains("15.0k"));
+        assert!(html.contains("15000"), "raw token count for sorting");
+        // Relative time should be present.
+        assert!(
+            html.contains("h ago")
+                || html.contains("m ago")
+                || html.contains("Jun")
+                || html.contains("—"),
+            "relative time should be present"
+        );
+        // Index interactivity controls.
+        assert!(html.contains("data-view-toggle"), "view toggle should be present");
+        assert!(html.contains("index-search-input"), "search input should be present");
+        assert!(html.contains("date-chip"), "date filter chips should be present");
+        assert!(html.contains("data-view=\"cards\""), "default view mode attr should be present");
+        // Data attributes for filtering.
+        assert!(html.contains("data-short-name"), "short name data attr for search");
+        assert!(html.contains("data-last-activity"), "last activity data attr for date filter");
+        assert!(html.contains("data-sessions"), "sessions data attr for sorting");
         assert!(!html.contains("http://"));
         assert!(!html.contains("https://"));
     }

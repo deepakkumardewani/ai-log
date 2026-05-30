@@ -11,7 +11,7 @@ use std::path::Path;
 use rusqlite::{params, Connection};
 
 /// Current cache schema version. Bump to force a full rebuild.
-const SCHEMA_VERSION: u32 = 1;
+const SCHEMA_VERSION: u32 = 2;
 
 /// Cached metadata for a single session.
 #[derive(Debug, Clone)]
@@ -26,6 +26,7 @@ pub struct CachedSessionMeta {
     pub total_output_tokens: u64,
     pub total_cache_creation_tokens: u64,
     pub total_cache_read_tokens: u64,
+    pub first_user_prompt: Option<String>,
 }
 
 /// Per-project aggregate cached data.
@@ -76,18 +77,19 @@ impl Cache {
         db.execute_batch(
             "CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL);
              CREATE TABLE IF NOT EXISTS sessions (
-                 id              TEXT PRIMARY KEY,
-                 project_name    TEXT NOT NULL,
-                 title           TEXT,
-                 first_timestamp TEXT,
-                 last_timestamp  TEXT,
-                 message_count   INTEGER NOT NULL DEFAULT 0,
-                 input_tokens    INTEGER NOT NULL DEFAULT 0,
-                 output_tokens   INTEGER NOT NULL DEFAULT 0,
-                 cache_create    INTEGER NOT NULL DEFAULT 0,
-                 cache_read      INTEGER NOT NULL DEFAULT 0,
-                 file_mtime      INTEGER NOT NULL DEFAULT 0,
-                 file_size       INTEGER NOT NULL DEFAULT 0
+                 id                TEXT PRIMARY KEY,
+                 project_name      TEXT NOT NULL,
+                 title             TEXT,
+                 first_timestamp   TEXT,
+                 last_timestamp    TEXT,
+                 message_count     INTEGER NOT NULL DEFAULT 0,
+                 input_tokens      INTEGER NOT NULL DEFAULT 0,
+                 output_tokens     INTEGER NOT NULL DEFAULT 0,
+                 cache_create      INTEGER NOT NULL DEFAULT 0,
+                 cache_read        INTEGER NOT NULL DEFAULT 0,
+                 file_mtime        INTEGER NOT NULL DEFAULT 0,
+                 file_size         INTEGER NOT NULL DEFAULT 0,
+                 first_user_prompt TEXT
              );",
         )?;
 
@@ -108,7 +110,7 @@ impl Cache {
             .query_row(
                 "SELECT id, project_name, title, first_timestamp, last_timestamp,
                         message_count, input_tokens, output_tokens,
-                        cache_create, cache_read, file_mtime
+                        cache_create, cache_read, file_mtime, first_user_prompt
                  FROM sessions WHERE id = ?1",
                 params![session_id],
                 |row| {
@@ -127,6 +129,7 @@ impl Cache {
                         total_output_tokens: row.get(7)?,
                         total_cache_creation_tokens: row.get(8)?,
                         total_cache_read_tokens: row.get(9)?,
+                        first_user_prompt: row.get(11)?,
                     })
                 },
             )
@@ -139,8 +142,9 @@ impl Cache {
             "INSERT OR REPLACE INTO sessions
              (id, project_name, title, first_timestamp, last_timestamp,
               message_count, input_tokens, output_tokens,
-              cache_create, cache_read, file_mtime, file_size)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+              cache_create, cache_read, file_mtime, file_size,
+              first_user_prompt)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 meta.session_id,
                 meta.project_name,
@@ -154,6 +158,7 @@ impl Cache {
                 meta.total_cache_read_tokens,
                 file_mtime,
                 file_size,
+                meta.first_user_prompt,
             ],
         );
     }
@@ -273,6 +278,7 @@ mod tests {
             total_output_tokens: 500,
             total_cache_creation_tokens: 200,
             total_cache_read_tokens: 100,
+            first_user_prompt: Some("Hello, Claude!".into()),
         };
         cache.put(&meta, 100, 5000);
 
@@ -301,6 +307,7 @@ mod tests {
             total_output_tokens: 50,
             total_cache_creation_tokens: 0,
             total_cache_read_tokens: 0,
+            first_user_prompt: None,
         };
         cache.put(&meta, 100, 1000);
 
@@ -326,6 +333,7 @@ mod tests {
                 total_output_tokens: 50,
                 total_cache_creation_tokens: 0,
                 total_cache_read_tokens: 0,
+                first_user_prompt: None,
             };
             cache.put(&meta, 100 + i, 1000);
         }
@@ -352,6 +360,7 @@ mod tests {
             total_output_tokens: 1,
             total_cache_creation_tokens: 0,
             total_cache_read_tokens: 0,
+            first_user_prompt: None,
         };
         cache.put(&meta, 100, 100);
         cache.clear().unwrap();
@@ -383,6 +392,7 @@ mod tests {
             total_output_tokens: 1,
             total_cache_creation_tokens: 0,
             total_cache_read_tokens: 0,
+            first_user_prompt: None,
         };
         cache.put(&meta, 100, 100);
         drop(cache);

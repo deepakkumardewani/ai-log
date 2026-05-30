@@ -7,6 +7,9 @@
     </div>
     <div class="header-separator"></div>
     <div class="header-meta">
+      {% if let Some(name) = project_name %}
+      <a href="combined_transcripts.html" class="header-back-link">&larr; {{ name }}</a>
+      {% endif %}
       <span class="header-meta-title">{{ session_title }}</span>
       <div class="header-meta-stats">
         <span>{{ session_time }}</span>

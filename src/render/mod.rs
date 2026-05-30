@@ -15,6 +15,8 @@ pub struct IndexProjectData {
     pub session_count: u32,
     pub message_count: u32,
     pub total_tokens: u64,
+    pub short_name: String,
+    pub last_activity: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -23,4 +25,6 @@ pub struct ProjectSessionData {
     pub title: Option<String>,
     pub message_count: u32,
     pub total_tokens: u64,
+    pub first_user_prompt: Option<String>,
+    pub started_at: Option<String>,
 }

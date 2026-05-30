@@ -265,6 +265,7 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
                             &agg,
                             css.clone(),
                             page,
+                            None,
                         );
                         let html = ctx.render()?;
                         std::fs::write(&filename, &html)?;
@@ -286,7 +287,7 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
             }
 
             // Non-paginated path.
-            let ctx = crate::render::html::build_context(&session, &agg, css);
+            let ctx = crate::render::html::build_context(&session, &agg, css, None);
             let html = ctx.render()?;
 
             let output_path = match cfg.output {
@@ -400,6 +401,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         let mut session_datas: Vec<ProjectSessionData> = Vec::new();
         let mut project_messages: u32 = 0;
         let mut project_tokens: u64 = 0;
+        let mut project_last_activity: Option<String> = None;
 
         for sf in &project.sessions {
             // Check cache first.
@@ -424,6 +426,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                 cache_read,
                 first_ts,
                 last_ts,
+                first_user_prompt,
             ) = if let Some(ref cm) = cached {
                 // Use cached metadata.
                 (
@@ -435,6 +438,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                     cm.total_cache_read_tokens,
                     cm.first_timestamp.clone(),
                     cm.last_timestamp.clone(),
+                    cm.first_user_prompt.clone(),
                 )
             } else {
                 // Parse and aggregate.
@@ -456,6 +460,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                 let cr = agg.total_cache_read_tokens;
                 let first = agg.first_timestamp.map(|t| t.to_rfc3339());
                 let last = agg.last_timestamp.map(|t| t.to_rfc3339());
+                let fup = crate::render::html::find_first_user_prompt(&session);
 
                 // Store in cache.
                 if let Some(ref c) = cache {
@@ -471,13 +476,14 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                             total_output_tokens: ot,
                             total_cache_creation_tokens: cc,
                             total_cache_read_tokens: cr,
+                            first_user_prompt: fup.clone(),
                         },
                         file_mtime,
                         file_size,
                     );
                 }
 
-                (title, msg_count, it, ot, cc, cr, first, last)
+                (title, msg_count, it, ot, cc, cr, first, last, fup)
             };
 
             // Date filter.
@@ -512,6 +518,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                                     &agg,
                                     css.clone(),
                                     page,
+                                    Some(&project.name),
                                 );
                                 let html = ctx.render()?;
                                 fs::write(&page_path, &html)?;
@@ -519,7 +526,12 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                             total_exported += 1;
                         }
                     } else {
-                        let ctx = crate::render::html::build_context(&session, &agg, css.clone());
+                        let ctx = crate::render::html::build_context(
+                            &session,
+                            &agg,
+                            css.clone(),
+                            Some(&project.name),
+                        );
                         let html = ctx.render()?;
                         fs::write(&session_html_path, &html)?;
                         total_exported += 1;
@@ -532,10 +544,21 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                 title,
                 message_count: msg_count,
                 total_tokens: total_session_tokens,
+                first_user_prompt,
+                started_at: first_ts.clone(),
             });
 
             project_messages += msg_count;
             project_tokens += total_session_tokens;
+
+            // Track per-project last activity.
+            if let Some(ref ts) = last_ts {
+                match project_last_activity.as_deref() {
+                    None => project_last_activity = Some(ts.clone()),
+                    Some(cur) if ts.as_str() > cur => project_last_activity = Some(ts.clone()),
+                    _ => {}
+                }
+            }
 
             // Track global time range.
             if let Some(ref ts) = first_ts {
@@ -568,11 +591,15 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
             projects.iter().find(|p| p.name == project.name).map(|p| p.sessions.len()).unwrap_or(0)
         );
 
+        let short_name = project_name_short(&project.name, &project.path);
+
         all_project_data.push(IndexProjectData {
             name: project.name.clone(),
             session_count: project.sessions.len().try_into().unwrap_or(u32::MAX),
             message_count: project_messages,
             total_tokens: project_tokens,
+            short_name,
+            last_activity: project_last_activity,
         });
 
         global_messages += project_messages;
@@ -714,6 +741,15 @@ fn cached_timestamps_match_date_range(
         }
         _ => true,
     }
+}
+
+/// Extract a human-readable short name from a project path.
+///
+/// Uses the directory name (last non-empty path segment) as the short name,
+/// which is what `discover_projects` already uses as `project.name`.
+fn project_name_short(name: &str, _path: &Path) -> String {
+    // `name` is already the final path segment from `discover_projects`.
+    name.to_string()
 }
 
 /// Extension trait to get end-of-day for a DateTime<Utc>.

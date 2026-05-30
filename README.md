@@ -25,7 +25,7 @@ Opens (or writes) a fully self-contained `session.html` — no CDN URLs, no exte
 - **Zero-Config**: Sensible defaults — just point it at a JSONL file
 - **Multi-Project Export**: Export all your Claude Code projects at once with `cclog --all-projects`, generating a static navigable site with master index + per-project pages
 - **SQLite Cache**: Session metadata cached for fast incremental rebuilds; `--clear-cache` and `--no-cache` flags for control
-- **Interactive HTML Output**: Client-side message-type filter chips with URL-hash persistence, in-page search with 150ms debounce, sidebar scroll-spy navigation via IntersectionObserver, and a light/dark theme toggle persisted to localStorage
+- **Interactive HTML Output**: Client-side message-type filter chips with URL-hash persistence, in-page search with 150ms debounce, and a light/dark theme toggle persisted to localStorage. Index page includes project search, date range filter with presets, and card/list view toggle with localStorage persistence
 - **Fast**: Single-pass JSONL parser with a session DAG built in memory; typical sessions export in milliseconds
 
 ## Installation

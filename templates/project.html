@@ -26,12 +26,23 @@
   <div class="session-list">
   {% for session in sessions %}
     <a href="{{ session.filename }}" class="session-card">
-      <h3 class="session-card-title">{{ session.title }}</h3>
+      <div class="session-card-primary">
+        <h3 class="session-card-title">
+          {% if let Some(prompt) = session.first_user_prompt %}
+            {{ prompt }}
+          {% else if session.title != session.id %}
+            {{ session.title }}
+          {% else %}
+            (no user message)
+          {% endif %}
+        </h3>
+        <span class="session-card-time">{{ session.relative_time }}</span>
+      </div>
+      <div class="session-card-id">{{ session.id }}</div>
       <div class="session-card-meta">
         <span>{{ session.message_count }} messages</span>
         <span>{{ session.token_total }} tokens</span>
       </div>
-      <div class="session-card-id">{{ session.id }}</div>
     </a>
   {% endfor %}
   </div>
