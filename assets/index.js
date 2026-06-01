@@ -1,8 +1,11 @@
 /**
- * cclog index page interactivity — self-contained, no external dependencies.
+ * cclog interactivity — self-contained, no external dependencies.
+ *
+ * Works on both the index page (project list) and per-project page
+ * (session list).  Detects page context from the DOM.
  *
  * Features:
- *   1. View-mode toggle (cards / list) with localStorage persistence
+ *   1. View-mode toggle (cards / list) — index page only
  *   2. Search bar (case-insensitive substring, 150ms debounce)
  *   3. Date filter (preset chips + custom range picker)
  *
@@ -12,10 +15,23 @@
 (function () {
   'use strict';
 
+  // ---- Page context detection ----
+
+  var isIndexPage = !!document.querySelector('.project-grid');
+  var isProjectPage = !!document.querySelector('.session-list');
+
+  var CARD_SELECTOR = isProjectPage ? '.session-card' : '.project-card';
+  var DATE_ATTR = isProjectPage ? 'data-started-at' : 'data-last-activity';
+
+  // ---- Search attributes (checked in order) ----
+  var SEARCH_ATTRS = isProjectPage
+    ? ['data-prompt', 'data-title', 'data-id']
+    : ['data-display-name', 'data-short-name', 'data-name'];
+
   var VIEW_KEY = 'cclog:index:viewMode';
 
   // -----------------------------------------------------------------------
-  // 1. View-mode toggle
+  // 1. View-mode toggle (index page only)
   // -----------------------------------------------------------------------
 
   function getViewMode() {
@@ -36,10 +52,12 @@
     var grid = document.querySelector('.project-grid');
     if (!grid) return;
     grid.setAttribute('data-view', mode);
-    var toggle = document.querySelector('[data-view-toggle]');
-    if (toggle) {
-      toggle.setAttribute('aria-pressed', mode === 'list' ? 'true' : 'false');
-    }
+    // Update both view-switcher buttons.
+    var buttons = document.querySelectorAll('[data-view-mode]');
+    buttons.forEach(function (btn) {
+      var btnMode = btn.getAttribute('data-view-mode');
+      btn.setAttribute('aria-pressed', btnMode === mode ? 'true' : 'false');
+    });
   }
 
   // ---- List-view column sorting ----
@@ -93,25 +111,21 @@
     var mode = getViewMode();
     applyViewMode(mode);
 
-    var toggle = document.querySelector('[data-view-toggle]');
-    if (!toggle) return;
+    var buttons = document.querySelectorAll('[data-view-mode]');
+    if (!buttons.length) return;
 
-    // Sync UI on first paint — inline script in <head> already set the
-    // data-view attribute, so we only need to update the button state.
-    toggle.setAttribute('aria-pressed', mode === 'list' ? 'true' : 'false');
-
-    toggle.addEventListener('click', function () {
-      var grid = document.querySelector('.project-grid');
-      if (!grid) return;
-      var current = grid.getAttribute('data-view') || 'cards';
-      var next = current === 'cards' ? 'list' : 'cards';
-      setViewMode(next);
-      applyViewMode(next);
-      // Re-apply sort if switching to list view.
-      if (next === 'list' && currentSort.col) {
-        sortCards(currentSort.col, currentSort.asc);
-        updateSortHeaders();
-      }
+    buttons.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var next = this.getAttribute('data-view-mode');
+        if (!next) return;
+        setViewMode(next);
+        applyViewMode(next);
+        // Re-apply sort if switching to list view.
+        if (next === 'list' && currentSort.col) {
+          sortCards(currentSort.col, currentSort.asc);
+          updateSortHeaders();
+        }
+      });
     });
   }
 
@@ -137,14 +151,24 @@
 
   function applySearch(term) {
     currentSearch = term.toLowerCase();
-    var cards = document.querySelectorAll('.project-card');
+    var cards = document.querySelectorAll(CARD_SELECTOR);
     cards.forEach(function (c) {
-      var shortName = (c.getAttribute('data-short-name') || '').toLowerCase();
-      var name = (c.getAttribute('data-name') || '').toLowerCase();
-      if (currentSearch && shortName.indexOf(currentSearch) === -1 && name.indexOf(currentSearch) === -1) {
-        c.setAttribute('data-search-hidden', '');
-      } else {
+      if (!currentSearch) {
         c.removeAttribute('data-search-hidden');
+        return;
+      }
+      var match = false;
+      for (var i = 0; i < SEARCH_ATTRS.length; i++) {
+        var val = (c.getAttribute(SEARCH_ATTRS[i]) || '').toLowerCase();
+        if (val.indexOf(currentSearch) !== -1) {
+          match = true;
+          break;
+        }
+      }
+      if (match) {
+        c.removeAttribute('data-search-hidden');
+      } else {
+        c.setAttribute('data-search-hidden', '');
       }
     });
     syncVisibility();
@@ -201,14 +225,14 @@
   }
 
   function applyDateFilter() {
-    var cards = document.querySelectorAll('.project-card');
+    var cards = document.querySelectorAll(CARD_SELECTOR);
     cards.forEach(function (c) {
       // No filter → visible.
       if (currentDatePreset === 'all' && !currentDateFrom && !currentDateTo) {
         c.removeAttribute('data-date-hidden');
         return;
       }
-      var activityIso = c.getAttribute('data-last-activity');
+      var activityIso = c.getAttribute(DATE_ATTR);
       var activityDate = toLocalDate(activityIso);
       if (!activityDate) {
         // No timestamp → show if "All time", hide otherwise.
@@ -326,12 +350,44 @@
   // -----------------------------------------------------------------------
 
   function syncVisibility() {
-    var cards = document.querySelectorAll('.project-card');
+    var cards = document.querySelectorAll(CARD_SELECTOR);
+    var visibleCount = 0;
     cards.forEach(function (c) {
       var searchHidden = c.hasAttribute('data-search-hidden');
       var dateHidden = c.hasAttribute('data-date-hidden');
-      c.hidden = searchHidden || dateHidden;
+      var hidden = searchHidden || dateHidden;
+      c.hidden = hidden;
+      if (!hidden) visibleCount++;
     });
+    // Show/hide empty state.
+    var empty = document.querySelector('.empty-state');
+    if (empty) {
+      empty.hidden = visibleCount > 0 || cards.length === 0;
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // 4. Theme toggle
+  // -----------------------------------------------------------------------
+
+  function initThemeToggle() {
+    var btn = document.getElementById('theme-toggle');
+    if (!btn) return;
+
+    function updateIcon() {
+      var theme = document.documentElement.getAttribute('data-theme');
+      btn.innerHTML = theme === 'light' ? '&#x2600;' : '&#x25D0;';
+    }
+
+    btn.addEventListener('click', function () {
+      var current = document.documentElement.getAttribute('data-theme');
+      var next = current === 'light' ? 'dark' : 'light';
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('cclog-theme', next); } catch (_) {}
+      updateIcon();
+    });
+
+    updateIcon();
   }
 
   // -----------------------------------------------------------------------
@@ -339,10 +395,15 @@
   // -----------------------------------------------------------------------
 
   function init() {
-    initViewToggle();
-    initSortableHeaders();
+    // Index-only features.
+    if (isIndexPage) {
+      initViewToggle();
+      initSortableHeaders();
+    }
+    // Common features (both pages).
     initSearch();
     initDateFilter();
+    initThemeToggle();
   }
 
   if (document.readyState === 'loading') {

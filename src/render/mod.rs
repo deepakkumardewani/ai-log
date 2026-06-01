@@ -16,6 +16,7 @@ pub struct IndexProjectData {
     pub message_count: u32,
     pub total_tokens: u64,
     pub short_name: String,
+    pub display_name: String,
     pub last_activity: Option<String>,
 }
 

@@ -11,8 +11,10 @@ use chrono::{DateTime, Utc};
 #[template(path = "project.html")]
 pub struct ProjectContext {
     pub css: String,
+    pub index_js: String,
     pub version: String,
     pub project_name: String,
+    pub display_name: String,
     pub session_count: u32,
     pub message_count: u32,
     pub token_total: String,
@@ -35,6 +37,7 @@ pub struct SessionCard {
 pub fn build_context(
     css: String,
     project_name: String,
+    display_name: String,
     sessions: Vec<super::ProjectSessionData>,
 ) -> ProjectContext {
     let session_count = sessions.len() as u32;
@@ -64,8 +67,10 @@ pub fn build_context(
 
     ProjectContext {
         css,
+        index_js: crate::assets::INDEX_JS.to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         project_name,
+        display_name,
         session_count,
         message_count,
         token_total: format_token_count(total_tokens),
@@ -123,6 +128,7 @@ mod tests {
         let ctx = build_context(
             css.clone(),
             "my-app".into(),
+            "my-app".into(),
             vec![super::super::ProjectSessionData {
                 id: "sess-1".into(),
                 title: Some("Test Chat".into()),
@@ -137,6 +143,14 @@ mod tests {
         assert!(html.contains("my-app"));
         assert!(html.contains("sess-1.html"));
         assert!(html.contains("Help me build an app"));
+        // Toolbar elements.
+        assert!(html.contains("index-search-input"), "search input should be present");
+        assert!(html.contains("Search sessions"), "search placeholder should be present");
+        assert!(html.contains("date-chip"), "date filter chips should be present");
+        // Data attributes for filtering.
+        assert!(html.contains("data-started-at"), "started-at data attr for date filter");
+        assert!(html.contains("data-prompt"), "prompt data attr for search");
+        assert!(html.contains("data-title"), "title data attr for search");
         // Relative time should be present (the exact value depends on now,
         // but it should contain the expected markers).
         assert!(

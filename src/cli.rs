@@ -398,6 +398,9 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         let project_out = output_dir.join(&project.name);
         fs::create_dir_all(&project_out)?;
 
+        let short_name = project_name_short(&project.name, &project.path);
+        let display_name = project.display_name().to_string();
+
         let mut session_datas: Vec<ProjectSessionData> = Vec::new();
         let mut project_messages: u32 = 0;
         let mut project_tokens: u64 = 0;
@@ -580,8 +583,12 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         }
 
         // Per-project combined page.
-        let project_ctx =
-            crate::render::project::build_context(css.clone(), project.name.clone(), session_datas);
+        let project_ctx = crate::render::project::build_context(
+            css.clone(),
+            project.name.clone(),
+            display_name.clone(),
+            session_datas,
+        );
         let project_html = project_ctx.render()?;
         let combined_path = project_out.join("combined_transcripts.html");
         fs::write(&combined_path, &project_html)?;
@@ -591,14 +598,13 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
             projects.iter().find(|p| p.name == project.name).map(|p| p.sessions.len()).unwrap_or(0)
         );
 
-        let short_name = project_name_short(&project.name, &project.path);
-
         all_project_data.push(IndexProjectData {
             name: project.name.clone(),
             session_count: project.sessions.len().try_into().unwrap_or(u32::MAX),
             message_count: project_messages,
             total_tokens: project_tokens,
             short_name,
+            display_name,
             last_activity: project_last_activity,
         });
 

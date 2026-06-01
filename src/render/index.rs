@@ -23,6 +23,7 @@ pub struct IndexContext {
 pub struct ProjectCard {
     pub name: String,
     pub short_name: String,
+    pub display_name: String,
     pub session_count: u32,
     pub message_count: u32,
     pub token_total: String,
@@ -51,6 +52,7 @@ pub fn build_context(
         .map(|p| ProjectCard {
             name: p.name,
             short_name: p.short_name,
+            display_name: p.display_name,
             session_count: p.session_count,
             message_count: p.message_count,
             token_total: format_token_count(p.total_tokens),
@@ -119,6 +121,7 @@ mod tests {
                 message_count: 45,
                 total_tokens: 15000,
                 short_name: "test-proj".into(),
+                display_name: "test-proj".into(),
                 last_activity: Some("2025-06-15T12:00:00Z".into()),
             }],
             45,
@@ -140,11 +143,13 @@ mod tests {
             "relative time should be present"
         );
         // Index interactivity controls.
-        assert!(html.contains("data-view-toggle"), "view toggle should be present");
+        assert!(html.contains("data-view-mode"), "view switcher buttons should be present");
         assert!(html.contains("index-search-input"), "search input should be present");
         assert!(html.contains("date-chip"), "date filter chips should be present");
         assert!(html.contains("data-view=\"cards\""), "default view mode attr should be present");
+        assert!(html.contains("view-switcher"), "segmented view switcher should be present");
         // Data attributes for filtering.
+        assert!(html.contains("data-display-name"), "display name data attr for search");
         assert!(html.contains("data-short-name"), "short name data attr for search");
         assert!(html.contains("data-last-activity"), "last activity data attr for date filter");
         assert!(html.contains("data-sessions"), "sessions data attr for sorting");

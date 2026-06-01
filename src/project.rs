@@ -16,6 +16,27 @@ pub struct Project {
     pub sessions: Vec<SessionFile>,
 }
 
+impl Project {
+    /// Human-readable display name derived from the encoded directory name.
+    ///
+    /// Takes the substring after the last `-` in `self.name`. If the last
+    /// segment is empty (trailing dash, single dash, or empty string), falls
+    /// back to the full encoded string.
+    ///
+    /// # Examples
+    ///
+    /// | `self.name` | `display_name()` |
+    /// |---|---|
+    /// | `-Users-deepak-Documents-Programs-cclog` | `cclog` |
+    /// | `my-project` | `my-project` |
+    /// | `-leading-dash` | `leading-dash` |
+    /// | `trailing-dash-` | `trailing-dash-` (fallback) |
+    /// | `` (empty) | `` (fallback) |
+    pub fn display_name(&self) -> &str {
+        self.name.rsplit('-').next().filter(|s| !s.is_empty()).unwrap_or(&self.name)
+    }
+}
+
 /// A single session JSONL file within a project.
 #[derive(Debug, Clone)]
 pub struct SessionFile {
@@ -167,5 +188,72 @@ mod tests {
         let dir_str = dir.to_string_lossy();
         assert!(dir_str.contains(".claude"), "expected .claude in path, got: {dir_str}");
         assert!(dir_str.contains("projects"), "expected projects in path, got: {dir_str}");
+    }
+
+    // -----------------------------------------------------------------------
+    // display_name tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn display_name_normal_case() {
+        let p = Project {
+            name: "-Users-deepak-Documents-Programs-cclog".into(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        assert_eq!(p.display_name(), "cclog");
+    }
+
+    #[test]
+    fn display_name_leading_dash() {
+        let p = Project {
+            name: "-leading-dash".into(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        // Last segment after rsplit('-') on "-leading-dash" is "dash".
+        assert_eq!(p.display_name(), "dash");
+    }
+
+    #[test]
+    fn display_name_trailing_dash_falls_back() {
+        let p = Project {
+            name: "trailing-dash-".into(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        // Last segment is empty after trailing dash, fallback to full string.
+        assert_eq!(p.display_name(), "trailing-dash-");
+    }
+
+    #[test]
+    fn display_name_single_segment_no_dash() {
+        let p = Project {
+            name: "simple".into(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        // No dash at all — the whole string is the last (only) segment.
+        assert_eq!(p.display_name(), "simple");
+    }
+
+    #[test]
+    fn display_name_empty_string() {
+        let p = Project {
+            name: String::new(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        assert_eq!(p.display_name(), "");
+    }
+
+    #[test]
+    fn display_name_multiple_dashes() {
+        let p = Project {
+            name: "-Users-deepak-some-long-path-name".into(),
+            path: PathBuf::from("/tmp"),
+            sessions: vec![],
+        };
+        assert_eq!(p.display_name(), "name");
     }
 }
