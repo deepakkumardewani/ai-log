@@ -1,0 +1,707 @@
+//! Turn aggregation — groups flat transcript messages into conversational turns.
+//!
+//! A "turn" is either:
+//! - A **user turn**: a single user text message.
+//! - An **assistant turn**: one or more assistant messages (with their thinking,
+//!   tool calls, and tool results) bracketed between user text messages.
+//!
+//! Turn boundary rule: a turn opens on the first assistant content following
+//! a user *text* message; closes at the next user *text* message.
+//! `tool_result`-only messages (synthetic user wrappers) do **not** close a turn.
+
+use std::collections::HashMap;
+
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
+
+use crate::model::content::ContentItem;
+use crate::model::entry::TranscriptEntry;
+use crate::session::Session;
+
+// ---------------------------------------------------------------------------
+// Public types
+// ---------------------------------------------------------------------------
+
+/// A thinking step extracted from an assistant message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThinkingStep {
+    pub text: String,
+}
+
+/// A single tool call extracted from an assistant message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+}
+
+/// A sub-agent turn spawned via Task / Agent tool calls.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubAgentTurn {
+    pub tool_call_id: String,
+    pub name: String,
+    pub thinking: Option<ThinkingStep>,
+    pub tool_calls: Vec<ToolCall>,
+    pub message_text: String,
+}
+
+/// A user turn — a single user text message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct UserTurn {
+    pub message: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+/// An assistant turn — groups assistant messages, their thinking,
+/// tool calls, and sub-agents up to the next user text message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssistantTurn {
+    pub message_text: String,
+    pub thinking: Option<ThinkingStep>,
+    pub tool_calls: Vec<ToolCall>,
+    pub sub_agents: Vec<SubAgentTurn>,
+    pub timestamp: DateTime<Utc>,
+    pub total_in: u64,
+    pub total_out: u64,
+}
+
+/// A grouped conversational turn.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TurnGroup {
+    User(UserTurn),
+    Assistant(AssistantTurn),
+}
+
+/// A display item for the transcript — either a grouped conversational turn
+/// or a standalone non-conversation entry (system, summary, hook, etc.).
+#[derive(Debug, Clone)]
+pub enum DisplayItem {
+    Turn(TurnGroup),
+    Entry(Box<TranscriptEntry>),
+}
+
+// ---------------------------------------------------------------------------
+// Tool names that spawn sub-agents
+// ---------------------------------------------------------------------------
+
+/// Tool names that indicate a sub-agent spawn.
+const SUB_AGENT_TOOL_NAMES: &[&str] = &["Task", "Agent"];
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/// Group flat messages from a session into conversational turns.
+///
+/// Messages are walked in DFS order from session roots. Each user text
+/// message becomes a [`TurnGroup::User`]; each run of assistant messages
+/// (plus any intervening `tool_result`-only user messages) becomes a
+/// [`TurnGroup::Assistant`].
+pub fn group_into_turns(session: &Session) -> Vec<TurnGroup> {
+    let ordered = dfs_order(session);
+    let mut turns: Vec<TurnGroup> = Vec::new();
+    let mut i = 0;
+
+    while i < ordered.len() {
+        let node = &ordered[i];
+        match &node.entry {
+            TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
+                let text = extract_text_content(&ue.message);
+                if !text.is_empty() {
+                    turns.push(TurnGroup::User(UserTurn {
+                        message: text,
+                        timestamp: ue.common.timestamp,
+                    }));
+                }
+                i += 1;
+            }
+            TranscriptEntry::User(ue) if is_tool_result_only(&ue.message) => {
+                // tool_result-only user message without a preceding assistant —
+                // skip (shouldn't happen in practice, but don't panic).
+                i += 1;
+            }
+            TranscriptEntry::Assistant(_) => {
+                let (turn, consumed) = build_assistant_turn(&ordered, i);
+                turns.push(TurnGroup::Assistant(turn));
+                i += consumed;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+
+    turns
+}
+
+/// Group a session into [`DisplayItem`]s — conversational turns for
+/// User/Assistant messages plus standalone entries for system, summary,
+/// hook, and other metadata entries.
+///
+/// Like [`group_into_turns`] but preserves non-conversation entries in
+/// their original DFS position.
+pub fn group_session(session: &Session) -> Vec<DisplayItem> {
+    let ordered = dfs_order(session);
+    let mut items: Vec<DisplayItem> = Vec::new();
+    let mut i = 0;
+
+    while i < ordered.len() {
+        let node = &ordered[i];
+        match &node.entry {
+            TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
+                let text = extract_text_content(&ue.message);
+                if !text.is_empty() {
+                    items.push(DisplayItem::Turn(TurnGroup::User(UserTurn {
+                        message: text,
+                        timestamp: ue.common.timestamp,
+                    })));
+                }
+                i += 1;
+            }
+            TranscriptEntry::User(ue) if is_tool_result_only(&ue.message) => {
+                i += 1;
+            }
+            TranscriptEntry::Assistant(_) => {
+                let (turn, consumed) = build_assistant_turn(&ordered, i);
+                items.push(DisplayItem::Turn(TurnGroup::Assistant(turn)));
+                i += consumed;
+            }
+            _ => {
+                // Non-conversation entries (system, summary, hook, etc.).
+                items.push(DisplayItem::Entry(Box::new(node.entry.clone())));
+                i += 1;
+            }
+        }
+    }
+
+    items
+}
+
+// ---------------------------------------------------------------------------
+// DFS ordering
+// ---------------------------------------------------------------------------
+
+fn dfs_order(session: &Session) -> Vec<&crate::session::MessageNode> {
+    let mut result: Vec<&crate::session::MessageNode> = Vec::new();
+    let mut visited: HashMap<Uuid, bool> = HashMap::new();
+
+    for root_id in &session.root_message_ids {
+        dfs_collect(*root_id, session, &mut visited, &mut result);
+    }
+
+    result
+}
+
+fn dfs_collect<'s>(
+    uuid: Uuid,
+    session: &'s Session,
+    visited: &mut HashMap<Uuid, bool>,
+    result: &mut Vec<&'s crate::session::MessageNode>,
+) {
+    if visited.contains_key(&uuid) {
+        return;
+    }
+    visited.insert(uuid, true);
+
+    if let Some(node) = session.messages.get(&uuid) {
+        result.push(node);
+
+        for child_id in &node.children {
+            dfs_collect(*child_id, session, visited, result);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Turn building
+// ---------------------------------------------------------------------------
+
+fn build_assistant_turn(
+    ordered: &[&crate::session::MessageNode],
+    start: usize,
+) -> (AssistantTurn, usize) {
+    let mut message_parts: Vec<String> = Vec::new();
+    let mut thinking: Option<ThinkingStep> = None;
+    let mut tool_calls: Vec<ToolCall> = Vec::new();
+    let mut sub_agents: Vec<SubAgentTurn> = Vec::new();
+    let mut timestamp: Option<DateTime<Utc>> = None;
+    let mut total_in: u64 = 0;
+    let mut total_out: u64 = 0;
+    let mut consumed: usize = 0;
+    let mut pending_tool_calls: Vec<ToolCall> = Vec::new();
+
+    let mut i = start;
+    while i < ordered.len() {
+        let node = ordered[i];
+        match &node.entry {
+            TranscriptEntry::Assistant(ae) => {
+                if timestamp.is_none() {
+                    timestamp = Some(ae.common.timestamp);
+                }
+
+                // Accumulate tokens.
+                if let Some(ref usage) = ae.message.usage {
+                    let in_tok = usage.input_tokens.unwrap_or(0)
+                        + usage.cache_read_input_tokens.unwrap_or(0)
+                        + usage.cache_creation_input_tokens.unwrap_or(0);
+                    total_in += in_tok;
+                    total_out += usage.output_tokens.unwrap_or(0);
+                }
+
+                // Process content items.
+                for item in &ae.message.content {
+                    match item {
+                        ContentItem::Text { text } => {
+                            let t = text.trim();
+                            if !t.is_empty() {
+                                message_parts.push(t.to_string());
+                            }
+                        }
+                        ContentItem::Thinking { thinking: th, .. } => {
+                            // Keep the first thinking block only.
+                            if thinking.is_none() {
+                                thinking = Some(ThinkingStep { text: th.clone() });
+                            }
+                        }
+                        ContentItem::ToolUse { id, name, input } => {
+                            let tc = ToolCall {
+                                id: id.clone(),
+                                name: name.clone(),
+                                input: input.clone(),
+                            };
+                            if SUB_AGENT_TOOL_NAMES.contains(&name.as_str()) {
+                                pending_tool_calls.push(tc);
+                            } else {
+                                tool_calls.push(tc);
+                            }
+                        }
+                        ContentItem::ToolResult { .. } => {
+                            // Tool results within assistant messages are
+                            // rare; they're handled in user entries below.
+                        }
+                        ContentItem::Image { .. } => {
+                            // Ignore images for turn grouping.
+                        }
+                    }
+                }
+
+                consumed += 1;
+                i += 1;
+            }
+            TranscriptEntry::User(ue) if is_tool_result_only(&ue.message) => {
+                // Tool results belong to the current assistant turn.
+                // Try to match them with pending sub-agent tool calls.
+                for item in &ue.message.content {
+                    if let ContentItem::ToolResult {
+                        tool_use_id,
+                        content,
+                        ..
+                    } = item
+                    {
+                        // Check if this result completes a sub-agent tool call.
+                        if let Some(pos) =
+                            pending_tool_calls.iter().position(|tc| tc.id == *tool_use_id)
+                        {
+                            let tc = pending_tool_calls.remove(pos);
+                            let sub = build_sub_agent(&tc, &content.as_string());
+                            sub_agents.push(sub);
+                        }
+                        // Other tool results are just attached data; we don't
+                        // need to store them separately in the turn model.
+                    }
+                }
+                consumed += 1;
+                i += 1;
+            }
+            TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
+                // Next user text — close the assistant turn.
+                break;
+            }
+            _ => {
+                // Skip non-user, non-assistant entries (system, summary, etc.)
+                consumed += 1;
+                i += 1;
+            }
+        }
+    }
+
+    // Any remaining pending tool calls without results become sub-agents
+    // with minimal info (the result wasn't in the same turn).
+    for tc in pending_tool_calls {
+        sub_agents.push(SubAgentTurn {
+            tool_call_id: tc.id.clone(),
+            name: tc.name.clone(),
+            thinking: None,
+            tool_calls: Vec::new(),
+            message_text: String::new(),
+        });
+    }
+
+    // Ensure we always have a timestamp.
+    let timestamp = timestamp.unwrap_or_else(|| {
+        // Fallback — shouldn't happen if there's at least one assistant message.
+        Utc::now()
+    });
+
+    (
+        AssistantTurn {
+            message_text: message_parts.join("\n"),
+            thinking,
+            tool_calls,
+            sub_agents,
+            timestamp,
+            total_in,
+            total_out,
+        },
+        consumed,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Sub-agent detection
+// ---------------------------------------------------------------------------
+
+fn build_sub_agent(tc: &ToolCall, result_content: &str) -> SubAgentTurn {
+    // Try to extract sub-agent information from the tool result content.
+    // Tool results for Task/Agent typically contain the sub-agent's output
+    // as text, potentially with structured content.
+    //
+    // For now, parse the result content to extract text and look for
+    // nested thinking / tool call patterns in the result string.
+    let message_text = extract_agent_result_text(result_content);
+
+    SubAgentTurn {
+        tool_call_id: tc.id.clone(),
+        name: tc.name.clone(),
+        thinking: None,
+        tool_calls: Vec::new(),
+        message_text,
+    }
+}
+
+/// Extract the meaningful text from a Task/Agent tool result.
+///
+/// Task tool results often contain structured output that includes the
+/// sub-agent's response. We attempt to extract the final text portion.
+fn extract_agent_result_text(result: &str) -> String {
+    // The result is typically the sub-agent's output. Keep it as-is
+    // but trim excessive whitespace.
+    let trimmed = result.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    // If the result is very long, it likely contains the full sub-agent
+    // transcript. Take a reasonable portion.
+    if trimmed.len() > 10_000 {
+        trimmed.chars().take(10_000).collect::<String>() + "\u{2026}"
+    } else {
+        trimmed.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn has_text_content(msg: &crate::model::content::Message) -> bool {
+    msg.content.iter().any(|c| matches!(c, ContentItem::Text { text } if !text.trim().is_empty()))
+}
+
+fn is_tool_result_only(msg: &crate::model::content::Message) -> bool {
+    !msg.content.is_empty()
+        && msg.content.iter().all(|c| matches!(c, ContentItem::ToolResult { .. }))
+}
+
+fn extract_text_content(msg: &crate::model::content::Message) -> String {
+    msg.content
+        .iter()
+        .filter_map(|c| match c {
+            ContentItem::Text { text } => {
+                let t = text.trim();
+                if t.is_empty() {
+                    None
+                } else {
+                    Some(t.to_string())
+                }
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::parse_reader;
+    use crate::session::build_session;
+    use std::io::Cursor;
+
+    fn parse_and_group(jsonl: &str) -> Vec<TurnGroup> {
+        let result = parse_reader(Cursor::new(jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        group_into_turns(&session)
+    }
+
+    // -----------------------------------------------------------------------
+    // A1 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn single_user_single_assistant_produces_two_turns() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 2);
+        assert!(matches!(turns[0], TurnGroup::User(_)));
+        assert!(matches!(turns[1], TurnGroup::Assistant(_)));
+
+        if let TurnGroup::User(ref ut) = turns[0] {
+            assert_eq!(ut.message, "hi");
+        }
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.message_text, "Hello!");
+        }
+    }
+
+    #[test]
+    fn assistant_with_thinking_and_tools_grouped_into_one_turn() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"build"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"I will build."}},{{"type":"thinking","thinking":"Let me run cargo build"}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{"command":"cargo build"}}}},{{"type":"tool_use","id":"t2","name":"Read","input":{{"filePath":"Cargo.toml"}}}},{{"type":"tool_use","id":"t3","name":"Write","input":{{"filePath":"out.txt","content":"done"}}}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 2);
+        assert!(matches!(turns[0], TurnGroup::User(_)));
+        assert!(matches!(turns[1], TurnGroup::Assistant(_)));
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.message_text, "I will build.");
+            assert!(at.thinking.is_some());
+            assert_eq!(at.thinking.as_ref().unwrap().text, "Let me run cargo build");
+            assert_eq!(at.tool_calls.len(), 3);
+            assert_eq!(at.tool_calls[0].name, "Bash");
+            assert_eq!(at.tool_calls[1].name, "Read");
+            assert_eq!(at.tool_calls[2].name, "Write");
+        }
+    }
+
+    #[test]
+    fn assistant_with_tool_results_still_one_turn() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let tr1 = "550e8400-e29b-41d4-a716-446655440010";
+        let tr2 = "550e8400-e29b-41d4-a716-446655440011";
+        let tr3 = "550e8400-e29b-41d4-a716-446655440012";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"list files"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Running ls."}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{"command":"ls"}}}},{{"type":"tool_use","id":"t2","name":"Read","input":{{"filePath":"a.txt"}}}},{{"type":"tool_use","id":"t3","name":"Write","input":{{"filePath":"b.txt","content":"x"}}}}]}}}}
+{{"type":"user","uuid":"{tr1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t1","content":"file1\nfile2","is_error":false}}]}}}}
+{{"type":"user","uuid":"{tr2}","parentUuid":"{tr1}","timestamp":"2025-06-15T10:30:07Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t2","content":"content a","is_error":false}}]}}}}
+{{"type":"user","uuid":"{tr3}","parentUuid":"{tr2}","timestamp":"2025-06-15T10:30:08Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t3","content":"done","is_error":false}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 2);
+        assert!(matches!(turns[0], TurnGroup::User(_)));
+        assert!(matches!(turns[1], TurnGroup::Assistant(_)));
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.tool_calls.len(), 3, "should have all 3 tool calls in one turn");
+        }
+    }
+
+    #[test]
+    fn user_assistant_user_assistant_produces_four_turns() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let a2 = "550e8400-e29b-41d4-a716-446655440004";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}
+{{"type":"assistant","uuid":"{a2}","parentUuid":"{u2}","timestamp":"2025-06-15T10:31:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Goodbye!"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 4, "should have User, Assistant, User, Assistant = 4 turns");
+        assert!(matches!(turns[0], TurnGroup::User(_)));
+        assert!(matches!(turns[1], TurnGroup::Assistant(_)));
+        assert!(matches!(turns[2], TurnGroup::User(_)));
+        assert!(matches!(turns[3], TurnGroup::Assistant(_)));
+    }
+
+    #[test]
+    fn assistant_turn_aggregates_token_counts() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let a2 = "550e8400-e29b-41d4-a716-446655440003";
+        let u2 = "550e8400-e29b-41d4-a716-446655440004";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Part 1"}}],"usage":{{"input_tokens":100,"output_tokens":50,"cache_creation_input_tokens":20,"cache_read_input_tokens":10}}}}}}
+{{"type":"assistant","uuid":"{a2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Part 2"}}],"usage":{{"input_tokens":60,"output_tokens":30}}}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a2}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3, "User, Assistant, User");
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            // total_in = (100 + 20 + 10) + (60 + 0 + 0) = 130 + 60 = 190
+            assert_eq!(
+                at.total_in, 190,
+                "total_in should sum input + cache tokens from both messages"
+            );
+            // total_out = 50 + 30 = 80
+            assert_eq!(at.total_out, 80, "total_out should sum output tokens from both messages");
+        } else {
+            panic!("expected Assistant turn");
+        }
+    }
+
+    #[test]
+    fn empty_session_produces_no_turns() {
+        let jsonl = "";
+        let turns = parse_and_group(jsonl);
+        assert!(turns.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // A2 tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn task_tool_use_creates_sub_agent() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let tr1 = "550e8400-e29b-41d4-a716-446655440010";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"search the code"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"I will search."}},{{"type":"tool_use","id":"task1","name":"Task","input":{{"description":"search for files","prompt":"find *.rs"}}}}]}}}}
+{{"type":"user","uuid":"{tr1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"task1","content":"Found: src/main.rs, src/lib.rs","is_error":false}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{tr1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"thanks"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.sub_agents.len(), 1, "should have one sub-agent from Task tool");
+            assert_eq!(
+                at.sub_agents[0].tool_call_id, "task1",
+                "sub-agent should reference the Task tool call id"
+            );
+            assert_eq!(at.sub_agents[0].name, "Task");
+            assert!(
+                at.sub_agents[0].message_text.contains("Found:"),
+                "sub-agent message should contain result text"
+            );
+            // Non-Task tool calls should remain empty.
+            assert_eq!(at.tool_calls.len(), 0);
+        } else {
+            panic!("expected Assistant turn at index 1");
+        }
+    }
+
+    #[test]
+    fn non_task_tool_uses_become_regular_tool_calls() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"run ls"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Running."}},{{"type":"tool_use","id":"b1","name":"Bash","input":{{"command":"ls"}}}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"ok"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.tool_calls.len(), 1);
+            assert_eq!(at.tool_calls[0].name, "Bash");
+            assert_eq!(at.sub_agents.len(), 0, "non-Task tools should NOT become sub-agents");
+        }
+    }
+
+    #[test]
+    fn sub_agent_without_tool_result_still_tracked() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"search"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Delegating."}},{{"type":"tool_use","id":"task1","name":"Task","input":{{"description":"search"}}}},{{"type":"tool_use","id":"b1","name":"Bash","input":{{"command":"ls"}}}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"ok"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            // Bash tool call is regular.
+            assert_eq!(at.tool_calls.len(), 1);
+            assert_eq!(at.tool_calls[0].name, "Bash");
+            // Task tool call without result → still tracked as sub-agent.
+            assert_eq!(at.sub_agents.len(), 1);
+            assert_eq!(at.sub_agents[0].name, "Task");
+            assert_eq!(at.sub_agents[0].tool_call_id, "task1");
+            assert!(at.sub_agents[0].message_text.is_empty());
+        }
+    }
+
+    #[test]
+    fn multiple_assistant_messages_merged_into_one_turn() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let a2 = "550e8400-e29b-41d4-a716-446655440003";
+        let u2 = "550e8400-e29b-41d4-a716-446655440004";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"First."}}],"usage":{{"input_tokens":10,"output_tokens":5}}}}}}
+{{"type":"assistant","uuid":"{a2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Second."}}],"usage":{{"input_tokens":8,"output_tokens":4}}}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a2}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.message_text, "First.\nSecond.");
+            assert_eq!(at.total_in, 18);
+            assert_eq!(at.total_out, 9);
+        }
+    }
+
+    #[test]
+    fn tool_result_only_user_absorbed_into_assistant_turn() {
+        let jsonl = crate::tests::fixture_linear_session();
+        let turns = parse_and_group(&jsonl);
+        // fixture: User → Assistant+Bash → tool_result user → Assistant
+        // tool_result-only and second assistant are both absorbed → 2 turns.
+        assert_eq!(turns.len(), 2, "User + merged Assistant = 2 turns");
+        assert!(matches!(turns[0], TurnGroup::User(_)));
+        assert!(matches!(turns[1], TurnGroup::Assistant(_)));
+
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.tool_calls.len(), 1);
+            assert_eq!(at.tool_calls[0].name, "Bash");
+            assert!(
+                at.message_text.contains("Build completed successfully!"),
+                "second assistant text should be merged in"
+            );
+            assert!(
+                at.message_text.contains("I will build the project."),
+                "first assistant text should be merged in"
+            );
+        }
+    }
+}

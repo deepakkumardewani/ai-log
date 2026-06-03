@@ -225,26 +225,28 @@ fn render_read(r: &crate::model::tool::ReadInput) -> String {
 }
 
 fn render_write(w: &crate::model::tool::WriteInput) -> String {
-    let preview: String = w.content.chars().take(300).collect();
-    let more = if w.content.len() > 300 { " …" } else { "" };
-    let escaped = preview.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let diff = crate::render::diff::render_unified_diff("", &w.content);
+    let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
+    let body = format!("{}{}", summary, diff.html);
     wrap_card(
         &format!("Write — {}", w.file_path),
         "message-dot--tool",
-        "message-card-header--tool",
-        &format!(r#"<pre class="tool-write-preview">{}{}</pre>"#, escaped, more),
+        "message-card-header--diff",
+        &body,
         false,
         "",
     )
 }
 
 fn render_edit_card(e: &crate::model::tool::EditInput) -> String {
-    let diff_html = crate::render::diff::render_diff(&e.old_string, &e.new_string);
+    let diff = crate::render::diff::render_unified_diff(&e.old_string, &e.new_string);
+    let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
+    let body = format!("{}{}", summary, diff.html);
     wrap_card(
         &format!("Edit — {}", e.file_path),
         "message-dot--tool",
         "message-card-header--diff",
-        &diff_html,
+        &body,
         false,
         "",
     )
@@ -255,8 +257,9 @@ fn render_multiedit(me: &crate::model::tool::MultiEditInput) -> String {
         .edits
         .iter()
         .map(|op| {
-            let d = crate::render::diff::render_diff(&op.old_string, &op.new_string);
-            format!(r#"<div class="multiedit-op">{}</div>"#, d)
+            let d = crate::render::diff::render_unified_diff(&op.old_string, &op.new_string);
+            let s = crate::render::diff::render_change_summary(d.added, d.removed);
+            format!(r#"<div class="multiedit-op">{}{}</div>"#, s, d.html)
         })
         .collect();
     wrap_card(
@@ -642,5 +645,69 @@ mod tests {
             // Generic fallback should never panic.
             assert!(html.contains("message-card"), "{} should produce a card", name);
         }
+    }
+
+    // B2 tests — unified diff wiring
+
+    #[test]
+    fn edit_card_renders_unified_diff_with_summary() {
+        let html = render_edit_card(&crate::model::tool::EditInput {
+            file_path: "src/main.rs".into(),
+            old_string: "a\nb\n".into(),
+            new_string: "a\nc\n".into(),
+            replace_all: false,
+        });
+        // Contains diff lines.
+        assert!(html.contains("diff-line--add"), "should have added line");
+        assert!(html.contains("diff-line--del"), "should have deleted line");
+        // Contains change summary with correct counts.
+        assert!(html.contains("Added 1 line"), "should say Added 1 line");
+        assert!(html.contains("removed 1 line"), "should say removed 1 line");
+        // File-path header preserved.
+        assert!(html.contains("Edit — src/main.rs"), "file-path header should show");
+        // Old plain-text blocks are absent.
+        assert!(!html.contains("old_string"), "should not contain raw old_string label");
+        assert!(!html.contains("new_string"), "should not contain raw new_string label");
+    }
+
+    #[test]
+    fn write_card_renders_pure_add_diff() {
+        let html = render_write(&crate::model::tool::WriteInput {
+            file_path: "new_file.rs".into(),
+            content: "line one\nline two\n".into(),
+        });
+        // Only added lines, no deleted lines.
+        assert!(html.contains("diff-line--add"));
+        assert!(!html.contains("diff-line--del"));
+        // Summary: all additions, no removals.
+        assert!(html.contains("Added 2 lines"));
+        assert!(html.contains("removed 0 lines"));
+        // File-path header preserved.
+        assert!(html.contains("Write — new_file.rs"));
+    }
+
+    #[test]
+    fn multiedit_card_renders_diff_per_edit() {
+        let html = render_multiedit(&crate::model::tool::MultiEditInput {
+            file_path: "src/lib.rs".into(),
+            edits: vec![
+                crate::model::tool::EditOp {
+                    old_string: "x\n".into(),
+                    new_string: "y\n".into(),
+                    replace_all: false,
+                },
+                crate::model::tool::EditOp {
+                    old_string: "".into(),
+                    new_string: "z\n".into(),
+                    replace_all: false,
+                },
+            ],
+        });
+        assert!(html.contains("MultiEdit — src/lib.rs"));
+        // Both edits rendered.
+        assert!(html.contains("multiedit-op"));
+        // First edit has a change.
+        assert!(html.contains("diff-line--add"));
+        assert!(html.contains("diff-line--del"));
     }
 }

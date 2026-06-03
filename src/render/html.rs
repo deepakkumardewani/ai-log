@@ -4,6 +4,9 @@
 //! a [`TranscriptContext`] ready for the askama `transcript.html` template.
 //! Message content is rendered to HTML strings in Rust (comrak, syntect, similar)
 //! and the template only applies layout chrome.
+//!
+//! As of v2, messages are grouped into conversational turns (user bubbles,
+//! assistant cards with Thinking/Tools pills) via [`crate::conversation::group_session`].
 
 use std::collections::HashMap;
 
@@ -11,12 +14,14 @@ use askama::Template;
 use uuid::Uuid;
 
 use crate::aggregate::SessionAggregate;
+use crate::conversation::DisplayItem;
 use crate::model::content::ContentItem;
 use crate::model::entry::TranscriptEntry;
 use crate::session::Session;
 
 use super::markdown;
 use super::tools;
+use super::turn;
 
 /// Maximum character length for `first_user_prompt` before truncation.
 const FIRST_PROMPT_MAX_CHARS: usize = 120;
@@ -171,7 +176,7 @@ pub fn build_context(
     css: String,
     project_name: Option<&str>,
 ) -> TranscriptContext {
-    let message_cards = build_message_cards(session);
+    let message_cards = build_turn_cards(session);
     let sidebar_nav_items = build_sidebar_nav(&message_cards);
     let file_tree = build_file_tree(agg);
     let tool_counts = build_tool_counts(agg);
@@ -217,7 +222,7 @@ pub fn build_context_paginated(
     page: &super::pagination::Page,
     project_name: Option<&str>,
 ) -> TranscriptContext {
-    let all_cards = build_message_cards(session);
+    let all_cards = build_turn_cards(session);
     let page_cards: Vec<MessageCard> = all_cards
         .into_iter()
         .skip(page.message_range.start)
@@ -268,130 +273,64 @@ fn format_token_count(n: u64) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Message card builder
+// Turn card builder (v2 — conversational turns)
 // ---------------------------------------------------------------------------
 
-fn build_message_cards(session: &Session) -> Vec<MessageCard> {
-    // Walk messages in DFS order from roots.
+fn build_turn_cards(session: &Session) -> Vec<MessageCard> {
+    let items = crate::conversation::group_session(session);
     let mut cards: Vec<MessageCard> = Vec::new();
-    let mut visited: HashMap<Uuid, bool> = HashMap::new();
-    let mut idx = 0usize;
 
-    for root_id in &session.root_message_ids {
-        dfs_messages(*root_id, session, &mut visited, &mut idx, &mut cards);
+    for (idx, item) in items.iter().enumerate() {
+        let anchor = format!("msg-{}", idx + 1);
+
+        match item {
+            DisplayItem::Turn(turn_group) => {
+                let html = turn::render_turn_group(turn_group);
+                let (kind_class, snippet, filter_role) = match turn_group {
+                    crate::conversation::TurnGroup::User(ut) => {
+                        ("turn-user", Some(ut.message.clone()), "user")
+                    }
+                    crate::conversation::TurnGroup::Assistant(at) => {
+                        let snip = if at.message_text.is_empty() {
+                            None
+                        } else {
+                            Some(truncate_snippet(&at.message_text, 60))
+                        };
+                        ("turn-assistant", snip, "assistant")
+                    }
+                };
+                cards.push(MessageCard {
+                    kind_class: kind_class.to_string(),
+                    html,
+                    anchor,
+                    snippet,
+                    filter_role: filter_role.to_string(),
+                    filter_tools: String::new(),
+                });
+            }
+            DisplayItem::Entry(entry) => {
+                if let Some((kind_class, html, snippet)) = render_standalone_entry(entry.as_ref()) {
+                    let (filter_role, filter_tools) = filter_attrs(&kind_class);
+                    cards.push(MessageCard {
+                        kind_class,
+                        html,
+                        anchor,
+                        snippet,
+                        filter_role,
+                        filter_tools,
+                    });
+                }
+            }
+        }
     }
 
     cards
 }
 
-fn dfs_messages(
-    uuid: Uuid,
-    session: &Session,
-    visited: &mut HashMap<Uuid, bool>,
-    idx: &mut usize,
-    cards: &mut Vec<MessageCard>,
-) {
-    if visited.contains_key(&uuid) {
-        return;
-    }
-    visited.insert(uuid, true);
-
-    if let Some(node) = session.messages.get(&uuid) {
-        if let Some((kind_class, html, snippet)) = render_entry(&node.entry) {
-            *idx += 1;
-            let anchor = format!("msg-{}", idx);
-            let (filter_role, filter_tools) = filter_attrs(&kind_class);
-            cards.push(MessageCard {
-                kind_class,
-                html,
-                anchor,
-                snippet,
-                filter_role,
-                filter_tools,
-            });
-        }
-
-        for child_id in &node.children {
-            dfs_messages(*child_id, session, visited, idx, cards);
-        }
-    }
-}
-
-fn render_entry(entry: &TranscriptEntry) -> Option<(String, String, Option<String>)> {
+/// Render non-conversation entries (system, summary, hook, etc.) that are
+/// not grouped into turns.
+fn render_standalone_entry(entry: &TranscriptEntry) -> Option<(String, String, Option<String>)> {
     match entry {
-        TranscriptEntry::User(ue) => {
-            let ts = format_ts(&ue.common.timestamp);
-            // A "user" turn whose content is only tool_result blocks is
-            // really a tool's response coming back to Claude — render it
-            // as a Tool Result card rather than an empty USER card.
-            if is_tool_result_only(&ue.message) {
-                let body = render_tool_results(&ue.message);
-                return Some((
-                    "message-tool-result".to_string(),
-                    tools::wrap_card(
-                        "Tool Result",
-                        "message-dot--tool",
-                        "message-card-header--tool",
-                        &body,
-                        false,
-                        &ts,
-                    ),
-                    None,
-                ));
-            }
-            let body = render_user_body(&ue.message);
-            let snippet = first_text_snippet(&ue.message);
-            Some((
-                "message-user".to_string(),
-                tools::wrap_card(
-                    "User",
-                    "message-dot--user",
-                    "message-card-header--user",
-                    &body,
-                    false,
-                    &ts,
-                ),
-                snippet,
-            ))
-        }
-        TranscriptEntry::Assistant(ae) => {
-            let mut meta_bits = vec![format_ts(&ae.common.timestamp)];
-            if let Some(u) = ae.message.usage.as_ref() {
-                if let Some(out) = u.output_tokens {
-                    meta_bits.push(format!("{} out", out));
-                }
-                // "in" should reflect everything the model actually
-                // processed: fresh input + cache reads + cache writes.
-                // `input_tokens` alone undercounts when caching is active.
-                let total_in = u.input_tokens.unwrap_or(0)
-                    + u.cache_read_input_tokens.unwrap_or(0)
-                    + u.cache_creation_input_tokens.unwrap_or(0);
-                if total_in > 0 {
-                    meta_bits.push(format!("{} in", total_in));
-                }
-            }
-            let meta = meta_bits.join(" · ");
-            let msg_str = ae
-                .message
-                .content
-                .iter()
-                .map(|item| render_content_item(item, &ae.message.model, &ae.common.timestamp))
-                .collect::<Vec<_>>()
-                .join("\n");
-            let snippet = first_text_snippet(&ae.message);
-            Some((
-                "message-assistant".to_string(),
-                tools::wrap_card(
-                    "Assistant",
-                    "message-dot--assistant",
-                    "message-card-header--assistant",
-                    &msg_str,
-                    false,
-                    &meta,
-                ),
-                snippet,
-            ))
-        }
         TranscriptEntry::Summary(se) => {
             let ts = format_ts(&se.common.timestamp);
             let body = se.summary.clone().unwrap_or_default();
@@ -452,26 +391,10 @@ fn render_entry(entry: &TranscriptEntry) -> Option<(String, String, Option<Strin
                 None,
             ))
         }
-        // file-history-snapshot, last-prompt, permission-mode etc. are session
-        // metadata, not messages — drop them rather than showing empty cards.
         TranscriptEntry::Unknown { .. } => None,
+        // User / Assistant entries are handled by turn grouping.
+        TranscriptEntry::User(_) | TranscriptEntry::Assistant(_) => None,
     }
-}
-
-/// Extract a short, single-line preview from the first text block in a message.
-fn first_text_snippet(msg: &crate::model::content::Message) -> Option<String> {
-    let text = msg.content.iter().find_map(|c| match c {
-        ContentItem::Text { text } => {
-            let t = text.trim();
-            if t.is_empty() {
-                None
-            } else {
-                Some(t)
-            }
-        }
-        _ => None,
-    })?;
-    Some(truncate_snippet(text, 60))
 }
 
 /// Collapse whitespace and truncate to `max_chars` graphemes-ish (chars).
@@ -488,8 +411,8 @@ fn truncate_snippet(s: &str, max_chars: usize) -> String {
 /// Extract role and tool names from a `kind_class` for filter data attributes.
 fn filter_attrs(kind_class: &str) -> (String, String) {
     match kind_class {
-        "message-user" => ("user".to_string(), String::new()),
-        "message-assistant" => ("assistant".to_string(), String::new()),
+        "turn-user" | "message-user" => ("user".to_string(), String::new()),
+        "turn-assistant" | "message-assistant" => ("assistant".to_string(), String::new()),
         "message-tool-Bash" => (String::new(), "Bash".to_string()),
         "message-tool-Read" => (String::new(), "Read".to_string()),
         "message-tool-Write" => (String::new(), "Write".to_string()),
@@ -501,43 +424,6 @@ fn filter_attrs(kind_class: &str) -> (String, String) {
 
 fn format_ts(ts: &chrono::DateTime<chrono::Utc>) -> String {
     ts.with_timezone(&chrono::Local).format("%H:%M:%S · %b %d").to_string()
-}
-
-fn is_tool_result_only(msg: &crate::model::content::Message) -> bool {
-    !msg.content.is_empty()
-        && msg.content.iter().all(|c| matches!(c, ContentItem::ToolResult { .. }))
-}
-
-fn render_tool_results(msg: &crate::model::content::Message) -> String {
-    msg.content
-        .iter()
-        .filter_map(|c| match c {
-            ContentItem::ToolResult {
-                content, is_error, ..
-            } => Some(tools::render_tool_result(&content.as_string(), is_error.unwrap_or(false))),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn render_user_body(msg: &crate::model::content::Message) -> String {
-    // Concatenate all Text blocks; render as markdown so lists, code,
-    // fenced blocks, etc. show up correctly (real user input is often
-    // markdown).
-    let text: String = msg
-        .content
-        .iter()
-        .filter_map(|c| match c {
-            ContentItem::Text { text } => Some(text.as_str()),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    if text.trim().is_empty() {
-        return String::new();
-    }
-    markdown::render(&text)
 }
 
 fn render_system_entry(se: &crate::model::entry::SystemEntry) -> (String, String) {
@@ -681,54 +567,6 @@ fn pretty_json(v: &serde_json::Value) -> String {
     html_escape_text(&serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()))
 }
 
-fn render_content_item(
-    item: &ContentItem,
-    model: &Option<String>,
-    parent_ts: &chrono::DateTime<chrono::Utc>,
-) -> String {
-    match item {
-        ContentItem::Text { text } => {
-            if let Some(model_name) = model {
-                if model_name.to_lowercase().contains("claude") {
-                    // Assistant markdown
-                    markdown::render(text)
-                } else {
-                    tools::render_user_message_text(text)
-                }
-            } else {
-                tools::render_user_message_text(text)
-            }
-        }
-        ContentItem::Thinking { thinking, .. } => render_thinking_block(thinking, parent_ts),
-        ContentItem::ToolUse {
-            name, input, id, ..
-        } => tools::render_tool_use(name, input, id),
-        ContentItem::ToolResult {
-            content, is_error, ..
-        } => tools::render_tool_result(&content.as_string(), is_error.unwrap_or(false)),
-        ContentItem::Image { source } => tools::render_image_placeholder(&source.media_type),
-    }
-}
-
-fn render_thinking_block(thinking: &str, parent_ts: &chrono::DateTime<chrono::Utc>) -> String {
-    let ts = parent_ts.with_timezone(&chrono::Local).format("%H:%M:%S").to_string();
-    let content_html = if thinking.trim().is_empty() {
-        r#"<span class="thinking-empty">(thinking content not stored)</span>"#.to_string()
-    } else {
-        let escaped = thinking.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
-        escaped.replace('\n', "<br>")
-    };
-    format!(
-        r#"<details class="thinking-block" open>
-  <summary class="thinking-summary">
-    <span class="thinking-summary-label">Thinking</span>
-    <span class="thinking-summary-meta">{ts}</span>
-  </summary>
-  <div class="thinking-content">{content_html}</div>
-</details>"#,
-    )
-}
-
 // ---------------------------------------------------------------------------
 // Sidebar helpers
 // ---------------------------------------------------------------------------
@@ -757,7 +595,11 @@ fn build_sidebar_nav(cards: &[MessageCard]) -> Vec<SidebarNavItem> {
         // Prefer a content snippet for user/assistant single-card rows so
         // the sidebar actually distinguishes turns by what was said.
         let label = match (kind, run_len, cards[i].snippet.as_deref()) {
-            ("message-user" | "message-assistant", 1, Some(s)) if !s.is_empty() => s.to_string(),
+            ("turn-user" | "turn-assistant" | "message-user" | "message-assistant", 1, Some(s))
+                if !s.is_empty() =>
+            {
+                s.to_string()
+            }
             (_, 1, _) => role_label.to_string(),
             (_, n, _) => format!("{role_label} ×{n}"),
         };
@@ -776,8 +618,10 @@ fn build_sidebar_nav(cards: &[MessageCard]) -> Vec<SidebarNavItem> {
 
 fn kind_visuals(kind: &str) -> (&'static str, &'static str, &'static str) {
     match kind {
-        "message-user" => ("User", "&#x1F464;", "sidebar-nav-dot--user"),
-        "message-assistant" => ("Assistant", "&#x1F916;", "sidebar-nav-dot--assistant"),
+        "turn-user" | "message-user" => ("User", "&#x1F464;", "sidebar-nav-dot--user"),
+        "turn-assistant" | "message-assistant" => {
+            ("Assistant", "&#x1F916;", "sidebar-nav-dot--assistant")
+        }
         "message-tool-Bash" => ("Bash", "&#x2328;", "sidebar-nav-dot--tool"),
         "message-tool-Read" => ("Read", "&#x1F4D6;", "sidebar-nav-dot--tool"),
         "message-tool-Write" => ("Write", "&#x1F4DD;", "sidebar-nav-dot--tool"),
@@ -954,10 +798,13 @@ mod tests {
 
         assert!(ctx.message_count > 0);
         assert!(!ctx.message_cards.is_empty());
-        // Should have user, assistant, and tool cards.
+        // Should have user and assistant turn cards.
         let kinds: Vec<&str> = ctx.message_cards.iter().map(|c| c.kind_class.as_str()).collect();
-        assert!(kinds.contains(&"message-user"));
-        assert!(kinds.contains(&"message-assistant"));
+        assert!(kinds.contains(&"turn-user"), "should contain turn-user, got: {kinds:?}");
+        assert!(
+            kinds.contains(&"turn-assistant"),
+            "should contain turn-assistant, got: {kinds:?}"
+        );
     }
 
     #[test]

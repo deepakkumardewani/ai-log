@@ -272,7 +272,164 @@ button.filter-chip {
 .message-card-wrapper[hidden] { display: none !important; }
 
 /* ===================================================================
-   Message Cards
+   Turn Cards (v2 conversational view)
+   =================================================================== */
+.turn {
+  max-width: 800px; width: 100%; margin: 0;
+}
+.turn-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 0 8px;
+  font-family: var(--font-mono); font-size: 12px;
+  color: var(--muted);
+}
+.turn-header time { color: var(--muted); }
+.turn-body {
+  font-size: 14px; line-height: 1.6;
+  padding-bottom: 8px;
+}
+/* User turn — soft bubble */
+.turn--user {
+  background: var(--surface-container-low);
+  border-radius: 8px;
+  padding: 10px 16px;
+}
+.turn--user .turn-body p { margin: 0; }
+/* Assistant turn — flat card with left border accent */
+.turn--assistant {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: 2px;
+  padding: 10px 16px;
+}
+
+/* ===================================================================
+   Thinking / Tools pills
+   =================================================================== */
+.pill {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pill-summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.pill-summary::-webkit-details-marker { display: none; }
+.pill-summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 14px;
+  font-size: 12px;
+  transition: transform 0.15s ease;
+}
+details[open] > .pill-summary::before { transform: rotate(90deg); }
+.pill-body {
+  padding: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; line-height: 1.5;
+}
+.pill--thinking {
+  border-color: var(--indigo-accent);
+  background: rgba(99, 102, 241, 0.04);
+}
+.pill--thinking .pill-summary { color: var(--indigo-accent); }
+.pill--tools {
+  border-color: var(--secondary);
+  background: rgba(3, 218, 198, 0.03);
+}
+.pill--tools .pill-summary { color: var(--secondary); }
+.pill--disabled {
+  display: inline-block;
+  padding: 6px 12px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--muted); opacity: 0.4;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  cursor: default;
+}
+
+/* ===================================================================
+   Sub-agents (nested inside Tools pill)
+   =================================================================== */
+.sub-agent {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--primary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sub-agent-summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+}
+.sub-agent-summary::-webkit-details-marker { display: none; }
+.sub-agent-summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 12px;
+  font-size: 11px;
+  transition: transform 0.15s ease;
+}
+details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
+.sub-agent-body {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 13px; line-height: 1.5;
+}
+.sub-agent .message-card { margin: 4px 0; }
+.sub-agent .message-card-header { padding: 6px 12px; }
+.sub-agent .message-card-body { padding: 8px 12px; }
+
+/* Turn body content (markdown-rendered text inside turns) */
+.turn-body p { margin-bottom: 12px; }
+.turn-body p:last-child { margin-bottom: 0; }
+.turn-body ul,
+.turn-body ol { margin-bottom: 12px; padding-left: 24px; }
+.turn-body ul { list-style: disc; }
+.turn-body ol { list-style: decimal; }
+.turn-body li { margin-bottom: 4px; }
+.turn-body li > p { margin-bottom: 4px; }
+.turn-body ul:last-child,
+.turn-body ol:last-child { margin-bottom: 0; }
+.turn-body code {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
+.turn-body pre {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.turn-body pre code {
+  background: none; border: none; padding: 0;
+}
+
+/* ===================================================================
+   Message Cards (still used by tool cards inside turns)
    =================================================================== */
 .message-card {
   border: 1px solid var(--border);
@@ -613,25 +770,34 @@ button.filter-chip {
   font-size: 10px; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.05em; color: var(--muted);
 }
-.diff-container {
-  display: flex;
+/* Unified diff (line-level) */
+.diff {
   font-family: var(--font-mono); font-size: 11px;
   background: var(--surface-container-lowest);
   overflow-x: auto;
+  padding: 8px 0;
 }
-.diff-side { width: 50%; padding: 12px; display: flex; flex-direction: column; gap: 2px; }
-.diff-side--old {
-  border-right: 1px solid var(--border);
-  background: rgba(207, 102, 121, 0.05);
+.diff-line {
+  display: flex; gap: 8px;
+  padding: 1px 12px; line-height: 1.5;
+  white-space: pre-wrap; word-break: break-all;
 }
-.diff-side--new {
-  background: rgba(3, 218, 198, 0.05);
+.diff-line--add {
+  background: rgba(3, 218, 198, 0.1);
+  color: var(--secondary);
 }
-.diff-line { display: flex; gap: 8px; }
-.diff-line--removed { color: var(--error); }
-.diff-line--added { color: var(--secondary); }
-.diff-line--highlight { font-weight: 600; }
-.diff-marker { color: var(--muted); opacity: 0.5; user-select: none; width: 16px; text-align: center; flex-shrink: 0; }
+.diff-line--del {
+  background: rgba(207, 102, 121, 0.1);
+  color: var(--error);
+}
+.diff-line--ctx {
+  color: var(--muted);
+}
+.diff-summary {
+  font-family: var(--font-mono); font-size: 11px;
+  color: var(--muted); padding: 4px 12px 0;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
 
 /* ===================================================================
    Index & Project Pages (Pillar B)

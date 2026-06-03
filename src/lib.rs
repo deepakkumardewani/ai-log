@@ -6,6 +6,7 @@ pub mod aggregate;
 pub mod assets;
 pub mod cache;
 pub mod cli;
+pub mod conversation;
 pub mod dates;
 pub mod model;
 pub mod parser;

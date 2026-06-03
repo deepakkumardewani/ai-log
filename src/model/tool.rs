@@ -18,7 +18,7 @@ use super::content::ContentItem;
 
 /// Bash shell command execution.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct BashInput {
     pub command: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -33,7 +33,7 @@ pub struct BashInput {
 
 /// Read a file from the filesystem.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct ReadInput {
     pub file_path: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -46,7 +46,7 @@ pub struct ReadInput {
 
 /// Write content to a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct WriteInput {
     pub file_path: String,
     pub content: String,
@@ -54,7 +54,7 @@ pub struct WriteInput {
 
 /// Exact string replacement edit in a file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct EditInput {
     pub file_path: String,
     pub old_string: String,
@@ -65,7 +65,7 @@ pub struct EditInput {
 
 /// Multiple edits applied atomically.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct MultiEditInput {
     pub file_path: String,
     pub edits: Vec<EditOp>,
@@ -73,7 +73,7 @@ pub struct MultiEditInput {
 
 /// A single edit operation within a [`MultiEditInput`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct EditOp {
     pub old_string: String,
     pub new_string: String,
@@ -83,7 +83,7 @@ pub struct EditOp {
 
 /// Glob file pattern search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct GlobInput {
     pub pattern: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -92,7 +92,7 @@ pub struct GlobInput {
 
 /// Grep content search.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct GrepInput {
     pub pattern: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -103,7 +103,7 @@ pub struct GrepInput {
 
 /// A todo item within [`TodoWriteInput`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct TodoItem {
     pub content: String,
     pub status: String,
@@ -113,14 +113,14 @@ pub struct TodoItem {
 
 /// TodoWrite — structured task list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct TodoWriteInput {
     pub todos: Vec<TodoItem>,
 }
 
 /// An option within [`AskUserQuestionInput`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct QuestionOption {
     pub label: String,
     pub description: String,
@@ -128,7 +128,7 @@ pub struct QuestionOption {
 
 /// A question within [`AskUserQuestionInput`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct QuestionItem {
     pub question: String,
     pub header: String,
@@ -139,7 +139,7 @@ pub struct QuestionItem {
 
 /// AskUserQuestion — interactive user prompt.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct AskUserQuestionInput {
     pub questions: Vec<QuestionItem>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -148,7 +148,7 @@ pub struct AskUserQuestionInput {
 
 /// Web search query.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct WebSearchInput {
     pub query: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -159,7 +159,7 @@ pub struct WebSearchInput {
 
 /// Web fetch from a URL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct WebFetchInput {
     pub url: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -168,7 +168,7 @@ pub struct WebFetchInput {
 
 /// Schedule a future wakeup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct ScheduleWakeupInput {
     /// Seconds from now.
     pub delay_seconds: u64,
@@ -181,7 +181,7 @@ pub struct ScheduleWakeupInput {
 
 /// Cron job creation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct CronCreateInput {
     /// 5-field cron expression.
     pub cron: String,
@@ -195,19 +195,19 @@ pub struct CronCreateInput {
 
 /// Cron job deletion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct CronDeleteInput {
     pub id: String,
 }
 
 /// Cron job listing (no params needed).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct CronListInput {}
 
 /// Monitor — background task watcher.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct MonitorInput {
     pub description: String,
     pub timeout_ms: u64,
@@ -218,7 +218,7 @@ pub struct MonitorInput {
 /// Task / Agent invocation (covers `Task`, `Agent`, `TaskCreate`,
 /// `TaskUpdate`, `TaskList`, `TaskOutput`, `TaskStop`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct TaskInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -241,7 +241,7 @@ pub struct TaskInput {
 
 /// Team management (TeamCreate, TeamDelete).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct TeamInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
@@ -253,7 +253,7 @@ pub struct TeamInput {
 
 /// SendMessage — inter-agent communication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct SendMessageInput {
     pub message: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -262,7 +262,7 @@ pub struct SendMessageInput {
 
 /// Skill invocation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct SkillInput {
     /// The skill name / command.
     pub skill: String,
@@ -272,7 +272,7 @@ pub struct SkillInput {
 
 /// ExitPlanMode — signal plan completion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+
 pub struct ExitPlanModeInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub allowed_prompts: Option<Vec<serde_json::Value>>,
@@ -564,7 +564,7 @@ mod tests {
     fn dispatch_read() {
         let item = tool_use(
             "Read",
-            serde_json::json!({"filePath": "src/main.rs", "offset": 10, "limit": 20}),
+            serde_json::json!({"file_path": "src/main.rs", "offset": 10, "limit": 20}),
         );
         let ti = ToolInput::from_content_item(&item).unwrap();
         match ti {
@@ -582,10 +582,10 @@ mod tests {
         let item = tool_use(
             "Edit",
             serde_json::json!({
-                "filePath": "src/lib.rs",
-                "oldString": "let x = 1;",
-                "newString": "let x = 2;",
-                "replaceAll": false
+                "file_path": "src/lib.rs",
+                "old_string": "let x = 1;",
+                "new_string": "let x = 2;",
+                "replace_all": false
             }),
         );
         let ti = ToolInput::from_content_item(&item).unwrap();
@@ -661,10 +661,13 @@ mod tests {
         // Pairs of (tool_name, valid_minimal_input).
         let tool_cases: Vec<(&str, serde_json::Value)> = vec![
             ("Bash", serde_json::json!({"command": "ls"})),
-            ("Read", serde_json::json!({"filePath": "foo.txt"})),
-            ("Write", serde_json::json!({"filePath": "foo.txt", "content": "bar"})),
-            ("Edit", serde_json::json!({"filePath": "f", "oldString": "a", "newString": "b"})),
-            ("MultiEdit", serde_json::json!({"filePath": "f", "edits": []})),
+            ("Read", serde_json::json!({"file_path": "foo.txt"})),
+            ("Write", serde_json::json!({"file_path": "foo.txt", "content": "bar"})),
+            (
+                "Edit",
+                serde_json::json!({"file_path": "f", "old_string": "a", "new_string": "b"}),
+            ),
+            ("MultiEdit", serde_json::json!({"file_path": "f", "edits": []})),
             ("Glob", serde_json::json!({"pattern": "*.rs"})),
             ("Grep", serde_json::json!({"pattern": "fn"})),
             ("TodoWrite", serde_json::json!({"todos": []})),
@@ -672,7 +675,7 @@ mod tests {
             ("ask_user_question", serde_json::json!({"questions": []})),
             ("WebSearch", serde_json::json!({"query": "rust"})),
             ("WebFetch", serde_json::json!({"url": "https://example.com"})),
-            ("ScheduleWakeup", serde_json::json!({"delaySeconds": 60, "reason": "test"})),
+            ("ScheduleWakeup", serde_json::json!({"delay_seconds": 60, "reason": "test"})),
             ("CronCreate", serde_json::json!({"cron": "* * * * *", "prompt": "test"})),
             ("CronList", serde_json::json!({})),
             ("CronDelete", serde_json::json!({"id": "abc"})),
@@ -690,7 +693,7 @@ mod tests {
             ("ExitPlanMode", serde_json::json!({})),
             (
                 "Monitor",
-                serde_json::json!({"description": "w", "timeoutMs": 1000, "persistent": false, "command": "ls"}),
+                serde_json::json!({"description": "w", "timeout_ms": 1000, "persistent": false, "command": "ls"}),
             ),
         ];
 

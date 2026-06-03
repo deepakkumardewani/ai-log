@@ -135,7 +135,7 @@ fn extract_file_paths(
     tree: &mut BTreeMap<String, Vec<String>>,
 ) {
     let file_path = match tool_name {
-        "Read" | "Write" | "Edit" | "MultiEdit" => input.get("filePath"),
+        "Read" | "Write" | "Edit" | "MultiEdit" => input.get("file_path"),
         "Glob" => input.get("path"),
         _ => None,
     };
@@ -212,11 +212,11 @@ mod tests {
     #[test]
     fn file_tree_groups_paths_by_directory() {
         let tools = vec![
-            serde_json::json!({"type":"tool_use","id":"t1","name":"Read","input":{"filePath":"src/main.rs"}}),
-            serde_json::json!({"type":"tool_use","id":"t2","name":"Read","input":{"filePath":"src/lib.rs"}}),
-            serde_json::json!({"type":"tool_use","id":"t3","name":"Write","input":{"filePath":"README.md"}}),
+            serde_json::json!({"type":"tool_use","id":"t1","name":"Read","input":{"file_path":"src/main.rs"}}),
+            serde_json::json!({"type":"tool_use","id":"t2","name":"Read","input":{"file_path":"src/lib.rs"}}),
+            serde_json::json!({"type":"tool_use","id":"t3","name":"Write","input":{"file_path":"README.md"}}),
             serde_json::json!({"type":"tool_use","id":"t4","name":"Glob","input":{"pattern":"*.rs","path":"tests/"}}),
-            serde_json::json!({"type":"tool_use","id":"t5","name":"Edit","input":{"filePath":"src/model/entry.rs","oldString":"a","newString":"b"}}),
+            serde_json::json!({"type":"tool_use","id":"t5","name":"Edit","input":{"file_path":"src/model/entry.rs","old_string":"a","new_string":"b"}}),
         ];
         let a1 = "550e8400-e29b-41d4-a716-446655440002";
         let jsonl = make_tool_json(a1, &tools);
@@ -240,8 +240,8 @@ mod tests {
         let tools = vec![
             serde_json::json!({"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}),
             serde_json::json!({"type":"tool_use","id":"t2","name":"Bash","input":{"command":"pwd"}}),
-            serde_json::json!({"type":"tool_use","id":"t3","name":"Read","input":{"filePath":"foo.txt"}}),
-            serde_json::json!({"type":"tool_use","id":"t4","name":"Write","input":{"filePath":"bar.txt","content":"x"}}),
+            serde_json::json!({"type":"tool_use","id":"t3","name":"Read","input":{"file_path":"foo.txt"}}),
+            serde_json::json!({"type":"tool_use","id":"t4","name":"Write","input":{"file_path":"bar.txt","content":"x"}}),
         ];
         let a1 = "550e8400-e29b-41d4-a716-446655440002";
         let jsonl = make_tool_json(a1, &tools);
