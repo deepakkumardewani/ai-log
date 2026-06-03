@@ -9,6 +9,7 @@
   </div>
   <div class="filter-divider"></div>
   <div class="filter-chips" role="group" aria-label="Filter by message type"></div>
+  <button class="filter-toggle-btn" id="details-toggle-btn" type="button" title="Expand all details">Expand all</button>
 </div>
 
 <!-- Message Cards -->
@@ -20,5 +21,13 @@
     {{ card.html|safe }}
   </div>
   {% endfor %}
+</div>
+
+<!-- Shared modal — opened by [data-modal] triggers -->
+<div id="cclog-modal" class="modal-overlay" aria-modal="true" role="dialog" hidden>
+  <div class="modal-dialog">
+    <button type="button" class="modal-close" aria-label="Close">&times;</button>
+    <div class="modal-body"></div>
+  </div>
 </div>
 {% endblock %}

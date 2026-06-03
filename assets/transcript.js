@@ -266,6 +266,80 @@
   }
 
   // -----------------------------------------------------------------------
+  // 4. Expand-all / collapse-all toggle
+  // -----------------------------------------------------------------------
+
+  function initDetailsToggle() {
+    var btn = document.getElementById('details-toggle-btn');
+    if (!btn) return;
+    var expanded = false;
+
+    function updateLabel() {
+      btn.textContent = expanded ? 'Collapse all' : 'Expand all';
+    }
+
+    btn.addEventListener('click', function () {
+      var details = document.querySelectorAll('.message-list details');
+      if (expanded) {
+        details.forEach(function (d) { d.removeAttribute('open'); });
+        expanded = false;
+      } else {
+        details.forEach(function (d) { d.setAttribute('open', ''); });
+        expanded = true;
+      }
+      updateLabel();
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Shared modal
+  // -----------------------------------------------------------------------
+
+  function initModal() {
+    var overlay = document.getElementById('cclog-modal');
+    if (!overlay) return;
+    var bodyEl = overlay.querySelector('.modal-body');
+    var closeBtn = overlay.querySelector('.modal-close');
+
+    function openModal(html) {
+      bodyEl.innerHTML = html;
+      overlay.removeAttribute('hidden');
+      document.body.classList.add('modal-open');
+    }
+
+    function closeModal() {
+      overlay.setAttribute('hidden', '');
+      document.body.classList.remove('modal-open');
+      bodyEl.innerHTML = '';
+    }
+
+    // Backdrop click closes modal.
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeModal();
+    });
+
+    // Close button.
+    closeBtn.addEventListener('click', closeModal);
+
+    // Esc key closes modal.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !overlay.hasAttribute('hidden')) closeModal();
+    });
+
+    // Open modal from any [data-modal] trigger.
+    // data-modal="template-id"  → reads innerHTML from <template id="...">
+    // data-modal-html="..."     → uses the attribute value directly as HTML
+    document.addEventListener('click', function (e) {
+      var trigger = e.target.closest('[data-modal]');
+      if (!trigger) return;
+      var templateId = trigger.getAttribute('data-modal');
+      var tmpl = document.getElementById(templateId);
+      var html = tmpl ? tmpl.innerHTML : (trigger.getAttribute('data-modal-html') || '');
+      if (html) openModal(html);
+    });
+  }
+
+  // -----------------------------------------------------------------------
   // Boot
   // -----------------------------------------------------------------------
 
@@ -273,6 +347,8 @@
     initFilterChips();
     initSearch();
     initThemeToggle();
+    initDetailsToggle();
+    initModal();
   }
 
   if (document.readyState === 'loading') {

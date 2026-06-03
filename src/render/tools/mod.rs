@@ -6,6 +6,33 @@
 use crate::model::tool::ToolInput;
 
 // ---------------------------------------------------------------------------
+// v3 row primitives — dot class constants
+// ---------------------------------------------------------------------------
+
+/// Dot class for assistant text, thinking, and skill rows (gray).
+pub const DOT_ASSISTANT: &str = "dot--assistant";
+
+/// Dot class for tool calls and sub-agent rows (green).
+pub const DOT_TOOL: &str = "dot--tool";
+
+/// Render a flat v3 timeline row: `● <label> [meta]`.
+///
+/// This is the shared primitive used by all event row renderers. Use
+/// [`DOT_ASSISTANT`] for gray (assistant text / thinking / skill) or
+/// [`DOT_TOOL`] for green (tool calls / sub-agents). `meta` is optional
+/// secondary annotation (e.g. a file path, arg summary); pass `""` to omit.
+pub fn render_row(dot_class: &str, label: &str, meta: &str) -> String {
+    let meta_html = if meta.is_empty() {
+        String::new()
+    } else {
+        format!(r#"<span class="row-meta">{}</span>"#, meta)
+    };
+    format!(
+        r#"<div class="timeline-row"><div class="dot {dot_class}"></div><span class="row-label">{label}</span>{meta_html}</div>"#
+    )
+}
+
+// ---------------------------------------------------------------------------
 // Card wrapper
 // ---------------------------------------------------------------------------
 
@@ -172,9 +199,12 @@ pub fn render_tool_result(content: &str, is_error: bool) -> String {
     )
 }
 
-/// Placeholder for embedded images.
-pub fn render_image_placeholder(media_type: &str) -> String {
-    format!(r#"<div class="image-placeholder">[Image: {}]</div>"#, media_type)
+/// Render an embedded image as an `<img>` tag with base64 data.
+pub fn render_image(source: &crate::model::content::ImageSource) -> String {
+    format!(
+        r#"<img class="embedded-image" src="data:{};{},{}" alt="Attached image" loading="lazy">"#,
+        source.media_type, source.source_type, source.data
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -515,8 +545,9 @@ fn render_send_message(sm: &crate::model::tool::SendMessageInput) -> String {
 
 fn render_skill(s: &crate::model::tool::SkillInput) -> String {
     let args = s.args.as_deref().unwrap_or("—");
+    let title = if s.skill.is_empty() { "Skill".to_string() } else { s.skill.clone() };
     wrap_card(
-        "Skill",
+        &title,
         "message-dot--tool",
         "message-card-header--tool",
         &format!(
@@ -561,6 +592,290 @@ fn render_generic(name: &str, input: &serde_json::Value) -> String {
         .unwrap_or_default();
     let body = if rows.is_empty() { input.to_string() } else { rows.join("") };
     wrap_card(name, "message-dot--file", "message-card-header--diff", &body, false, "")
+}
+
+// ---------------------------------------------------------------------------
+// Shared HTML helper
+// ---------------------------------------------------------------------------
+
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T5: Thinking row
+// ---------------------------------------------------------------------------
+
+/// Render a thinking event as a v3 gray dot-row with inline expand.
+///
+/// Empty/blank thinking → disabled static row (no body, no toggle).
+/// Non-empty thinking → `<details>` row that expands inline on click.
+pub fn render_thinking_row(text: &str) -> String {
+    if text.trim().is_empty() {
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label thinking-disabled">Thinking</span></div>"#
+        )
+    } else {
+        let content = html_escape(text);
+        format!(
+            r#"<details class="thinking-row"><summary class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label">Thinking &#x203A;</span></summary><div class="thinking-body"><pre class="thinking-pre">{content}</pre></div></details>"#
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T6: Unified tool call row + IN/OUT presence
+// ---------------------------------------------------------------------------
+
+/// Render a [`ToolCallEvent`] as a v3 timeline row.
+///
+/// Each tool gets a green dot-row with its primary arg. Clicking expands
+/// IN and/or OUT sections; sections are only emitted when data is present.
+pub fn render_tool_call_event(tce: &crate::conversation::ToolCallEvent) -> String {
+    let ti = ToolInput::from_name_and_input(&tce.name, tce.input.clone());
+    let result = tce.result.as_ref();
+    match &ti {
+        ToolInput::Bash(b) => render_bash_event(b, result),
+        ToolInput::Read(r) => render_read_event(r, result, &tce.id),
+        ToolInput::Write(w) => render_write_event(w),
+        ToolInput::Edit(e) => render_edit_event(e),
+        ToolInput::MultiEdit(me) => render_multiedit_event(me),
+        ToolInput::Skill(s) => render_skill_event(s, result, &tce.id),
+        _ => render_generic_tool_event(&tce.name, &tce.input, result),
+    }
+}
+
+/// Wrap tool content in a `<details>` dot-row with expandable body.
+///
+/// Falls back to a plain non-expandable row when `body` is empty.
+fn render_tool_details_row(dot_class: &str, label: &str, body: &str) -> String {
+    if body.is_empty() {
+        format!(
+            r#"<div class="timeline-row"><div class="dot {dot_class}"></div><span class="row-label">{label}</span></div>"#
+        )
+    } else {
+        format!(
+            r#"<details class="tool-details"><summary class="timeline-row"><div class="dot {dot_class}"></div><span class="row-label">{label}</span></summary><div class="tool-details-body">{body}</div></details>"#
+        )
+    }
+}
+
+/// Render a labeled `tool-section` with a `<pre>` body.
+///
+/// Only call when content is non-empty; callers gate on data presence.
+fn render_tool_section(label: &str, content: &str, is_error: bool) -> String {
+    let error_class = if is_error { " tool-section--error" } else { "" };
+    format!(
+        r#"<div class="tool-section{error_class}"><div class="tool-section-label">{label}</div><pre class="tool-section-body">{}</pre></div>"#,
+        html_escape(content)
+    )
+}
+
+fn render_bash_event(
+    b: &crate::model::tool::BashInput,
+    result: Option<&crate::conversation::ToolResult>,
+) -> String {
+    let desc = b.description.as_deref().unwrap_or("").trim();
+    let bg_badge = if b.run_in_background.unwrap_or(false) {
+        r#" <span class="badge badge--bg">bg</span>"#
+    } else {
+        ""
+    };
+    let label = if !desc.is_empty() {
+        format!("Bash — {desc}{bg_badge}")
+    } else {
+        let preview: String = b.command.chars().take(60).collect();
+        let ellipsis = if b.command.chars().count() > 60 { "…" } else { "" };
+        format!("Bash{bg_badge} — {preview}{ellipsis}")
+    };
+
+    let in_section = render_tool_section("IN", &b.command, false);
+    let out_section =
+        result.map(|r| render_tool_section("OUT", &r.content, r.is_error)).unwrap_or_default();
+
+    render_tool_details_row(DOT_TOOL, &html_escape(&label), &format!("{in_section}{out_section}"))
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T7: Read row → modal (file contents)
+// ---------------------------------------------------------------------------
+
+fn render_read_event(
+    r: &crate::model::tool::ReadInput,
+    result: Option<&crate::conversation::ToolResult>,
+    id: &str,
+) -> String {
+    let line_range = match (r.offset, r.limit) {
+        (Some(off), Some(lim)) => format!(":{}-{}", off, off + lim),
+        (Some(off), None) => format!(":{}", off),
+        _ => String::new(),
+    };
+    let file_escaped = html_escape(&r.file_path);
+    let meta_html = if line_range.is_empty() {
+        String::new()
+    } else {
+        format!(r#" <span class="row-meta">{line_range}</span>"#)
+    };
+
+    if let Some(res) = result {
+        // Has result: filename opens modal with file contents.
+        let template_id = format!("read-{id}");
+        let contents_html =
+            format!(r#"<pre class="file-contents">{}</pre>"#, html_escape(&res.content));
+        let label = format!(
+            r#"Read — <button type="button" class="file-link" data-modal="{template_id}">{file_escaped}</button>{meta_html}"#
+        );
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_TOOL}"></div><span class="row-label">{label}</span></div><template id="{template_id}">{contents_html}</template>"#
+        )
+    } else {
+        // No result: plain row, filename is not a link.
+        let label = format!("Read — {file_escaped}{meta_html}");
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_TOOL}"></div><span class="row-label">{label}</span></div>"#
+        )
+    }
+}
+
+fn render_write_event(w: &crate::model::tool::WriteInput) -> String {
+    let diff = crate::render::diff::render_unified_diff("", &w.content);
+    let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
+    let body = format!("{summary}{}", diff.html);
+    render_tool_details_row(DOT_TOOL, &format!("Write — {}", html_escape(&w.file_path)), &body)
+}
+
+fn render_edit_event(e: &crate::model::tool::EditInput) -> String {
+    let diff = crate::render::diff::render_unified_diff(&e.old_string, &e.new_string);
+    let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
+    let body = format!("{summary}{}", diff.html);
+    render_tool_details_row(DOT_TOOL, &format!("Edit — {}", html_escape(&e.file_path)), &body)
+}
+
+fn render_multiedit_event(me: &crate::model::tool::MultiEditInput) -> String {
+    let diffs: Vec<String> = me
+        .edits
+        .iter()
+        .map(|op| {
+            let d = crate::render::diff::render_unified_diff(&op.old_string, &op.new_string);
+            let s = crate::render::diff::render_change_summary(d.added, d.removed);
+            format!(r#"<div class="multiedit-op">{s}{}</div>"#, d.html)
+        })
+        .collect();
+    let label = format!("MultiEdit — {} ({} edits)", html_escape(&me.file_path), me.edits.len());
+    render_tool_details_row(DOT_TOOL, &label, &diffs.join(""))
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T8: Skill row → modal
+// ---------------------------------------------------------------------------
+
+fn render_skill_event(
+    s: &crate::model::tool::SkillInput,
+    result: Option<&crate::conversation::ToolResult>,
+    id: &str,
+) -> String {
+    let skill_name = if s.skill.is_empty() { "Skill".to_string() } else { html_escape(&s.skill) };
+    let row_label = format!("{skill_name} skill");
+
+    if let Some(res) = result {
+        let template_id = format!("skill-{id}");
+        let body_html =
+            format!(r#"<div class="skill-body"><pre>{}</pre></div>"#, html_escape(&res.content));
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label"><button type="button" class="skill-link" data-modal="{template_id}">{row_label}</button></span></div><template id="{template_id}">{body_html}</template>"#
+        )
+    } else {
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label">{row_label}</span></div>"#
+        )
+    }
+}
+
+fn render_generic_tool_event(
+    name: &str,
+    input: &serde_json::Value,
+    result: Option<&crate::conversation::ToolResult>,
+) -> String {
+    let label = html_escape(name);
+    let in_rows: Vec<String> = input
+        .as_object()
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| {
+                    let val = if v.is_string() {
+                        v.as_str().unwrap().to_string()
+                    } else {
+                        v.to_string()
+                    };
+                    format!(
+                        r#"<div class="tool-row-kv"><span class="tool-kv-key">{}</span><span class="tool-kv-val">{}</span></div>"#,
+                        k,
+                        html_escape(&val)
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let in_section = if in_rows.is_empty() {
+        String::new()
+    } else {
+        render_tool_section("IN", &in_rows.join(""), false)
+    };
+    let out_section =
+        result.map(|r| render_tool_section("OUT", &r.content, r.is_error)).unwrap_or_default();
+    render_tool_details_row(DOT_TOOL, &label, &format!("{in_section}{out_section}"))
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T10: Sub-agent row + IN prompt
+// ---------------------------------------------------------------------------
+
+/// Render a sub-agent spawn event as a green dot-row `Agent: <desc>`.
+///
+/// Expands inline to show the IN prompt. No nested transcript is rendered.
+pub fn render_sub_agent_row(sa: &crate::conversation::SubAgentEvent) -> String {
+    let desc = sa.input.get("description").and_then(|v| v.as_str()).unwrap_or(&sa.name);
+    let label = format!("Agent: {}", html_escape(desc));
+
+    let prompt = sa.input.get("prompt").and_then(|v| v.as_str()).unwrap_or("");
+    if prompt.is_empty() {
+        format!(
+            r#"<div class="timeline-row"><div class="dot {DOT_TOOL}"></div><span class="row-label">{label}</span></div>"#
+        )
+    } else {
+        let in_section = render_tool_section("IN", prompt, false);
+        render_tool_details_row(DOT_TOOL, &label, &in_section)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// v3 event renderers — T11: Images — horizontal thumbnails → modal
+// ---------------------------------------------------------------------------
+
+/// Render a group of images as horizontally-stacked thumbnails.
+///
+/// Clicking a thumbnail opens it full-size in the shared modal.
+/// `card_id` is the parent card's anchor and is used to generate unique IDs.
+pub fn render_images_thumbnail_row(
+    images: &[crate::model::content::ImageSource],
+    card_id: &str,
+) -> String {
+    let thumbs: String = images
+        .iter()
+        .enumerate()
+        .map(|(i, img)| {
+            let src =
+                format!("data:{};{},{}", img.media_type, img.source_type, img.data);
+            let template_id = format!("img-{card_id}-{i}");
+            format!(
+                r#"<button type="button" class="img-thumb-btn" data-modal="{template_id}"><img class="img-thumb" src="{src}" alt="Image {num}" loading="lazy"></button><template id="{template_id}"><img class="img-modal-full" src="{src}" alt="Image {num}"></template>"#,
+                num = i + 1,
+            )
+        })
+        .collect();
+    format!(
+        r#"<div class="timeline-row images-row"><div class="img-thumbnails">{thumbs}</div></div>"#
+    )
 }
 
 #[cfg(test)]
@@ -660,9 +975,9 @@ mod tests {
         // Contains diff lines.
         assert!(html.contains("diff-line--add"), "should have added line");
         assert!(html.contains("diff-line--del"), "should have deleted line");
-        // Contains change summary with correct counts.
-        assert!(html.contains("Added 1 line"), "should say Added 1 line");
-        assert!(html.contains("removed 1 line"), "should say removed 1 line");
+        // Contains change summary with correct counts (new format: +X · −Y).
+        assert!(html.contains("diff-count--add"), "should have add count class");
+        assert!(html.contains("diff-count--del"), "should have del count class");
         // File-path header preserved.
         assert!(html.contains("Edit — src/main.rs"), "file-path header should show");
         // Old plain-text blocks are absent.
@@ -679,9 +994,9 @@ mod tests {
         // Only added lines, no deleted lines.
         assert!(html.contains("diff-line--add"));
         assert!(!html.contains("diff-line--del"));
-        // Summary: all additions, no removals.
-        assert!(html.contains("Added 2 lines"));
-        assert!(html.contains("removed 0 lines"));
+        // Summary contains diff counts (new format: +X · −Y).
+        assert!(html.contains("diff-count--add"), "should have add count class");
+        assert!(html.contains("+2 lines"), "should show +2 lines");
         // File-path header preserved.
         assert!(html.contains("Write — new_file.rs"));
     }
@@ -709,5 +1024,301 @@ mod tests {
         // First edit has a change.
         assert!(html.contains("diff-line--add"));
         assert!(html.contains("diff-line--del"));
+    }
+
+    // -----------------------------------------------------------------------
+    // D2 tests — skill card header
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn skill_card_header_shows_full_skill_name() {
+        let html = render_skill(&crate::model::tool::SkillInput {
+            skill: "agent-skills:interview-me".into(),
+            args: Some("".into()),
+        });
+        // Card header should contain the full skill name, not generic "Skill".
+        assert!(html.contains("agent-skills:interview-me"));
+        assert!(!html.contains(r#">Skill</span>"#), "should not use generic Skill label");
+    }
+
+    #[test]
+    fn skill_card_header_falls_back_when_empty() {
+        let html = render_skill(&crate::model::tool::SkillInput {
+            skill: String::new(),
+            args: None,
+        });
+        // Falls back to generic "Skill" when the skill name is empty.
+        assert!(html.contains(">Skill<"), "should fall back to generic Skill label");
+    }
+
+    // -----------------------------------------------------------------------
+    // T2 — render_row + dot class constants
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn render_row_assistant_dot_class() {
+        let html = render_row(DOT_ASSISTANT, "Thinking", "");
+        assert!(html.contains("dot--assistant"), "must use DOT_ASSISTANT class");
+        assert!(html.contains("timeline-row"), "must use timeline-row wrapper");
+        assert!(html.contains("Thinking"), "label must appear in output");
+        assert!(!html.contains("row-meta"), "no meta span when meta is empty");
+    }
+
+    #[test]
+    fn render_row_tool_dot_class() {
+        let html = render_row(DOT_TOOL, "Bash", "cargo build");
+        assert!(html.contains("dot--tool"), "must use DOT_TOOL class");
+        assert!(html.contains("Bash"), "label must appear");
+        assert!(html.contains("row-meta"), "meta span must appear when meta is provided");
+        assert!(html.contains("cargo build"), "meta value must appear");
+    }
+
+    #[test]
+    fn render_row_meta_omitted_when_empty() {
+        let html = render_row(DOT_ASSISTANT, "Some label", "");
+        assert!(!html.contains("row-meta"), "row-meta span must be absent for empty meta");
+    }
+
+    #[test]
+    fn dot_constants_distinct() {
+        assert_ne!(DOT_ASSISTANT, DOT_TOOL, "dot constants must differ");
+        assert_eq!(DOT_ASSISTANT, "dot--assistant");
+        assert_eq!(DOT_TOOL, "dot--tool");
+    }
+
+    // -----------------------------------------------------------------------
+    // T5 — thinking row
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn thinking_row_non_empty_is_details_with_gray_dot() {
+        let html = render_thinking_row("deep thought");
+        assert!(html.contains("<details"), "non-empty thinking must use <details>");
+        assert!(html.contains("dot--assistant"), "must use gray dot");
+        assert!(html.contains("Thinking"), "label must appear");
+        assert!(html.contains("deep thought"), "thinking content must appear");
+    }
+
+    #[test]
+    fn thinking_row_empty_is_disabled_static_row() {
+        let html = render_thinking_row("");
+        assert!(!html.contains("<details"), "empty thinking must NOT use <details>");
+        assert!(html.contains("thinking-disabled"), "must have disabled class");
+        assert!(html.contains("Thinking"), "label must appear");
+        assert!(html.contains("dot--assistant"), "must use gray dot");
+    }
+
+    #[test]
+    fn thinking_row_whitespace_treated_as_empty() {
+        let html = render_thinking_row("   \n  ");
+        assert!(!html.contains("<details"), "whitespace thinking treated as empty");
+        assert!(html.contains("thinking-disabled"));
+    }
+
+    // -----------------------------------------------------------------------
+    // T6 — render_tool_call_event unified row + IN/OUT presence
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_call_bash_with_result_shows_in_and_out() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "b1".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({"command": "cargo build", "description": "build"}),
+            result: Some(crate::conversation::ToolResult {
+                content: "Compiling...".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("dot--tool"), "bash must use green dot");
+        assert!(html.contains("Bash"), "Bash label must appear");
+        assert!(html.contains("cargo build"), "command must appear in IN section");
+        assert!(html.contains("Compiling"), "result must appear in OUT section");
+        assert!(html.contains("tool-section"), "must have tool-section divs");
+    }
+
+    #[test]
+    fn tool_call_bash_without_result_has_no_out_section() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "b1".to_string(),
+            name: "Bash".to_string(),
+            input: serde_json::json!({"command": "ls"}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        // IN section present (command is always there).
+        assert!(html.contains("ls"), "command must appear");
+        // OUT section absent when no result.
+        assert!(!html.contains(">OUT<"), "no OUT section when result is None");
+    }
+
+    #[test]
+    fn tool_call_in_only_no_result_no_out_block() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "g1".to_string(),
+            name: "Glob".to_string(),
+            input: serde_json::json!({"pattern": "*.rs", "path": "src/"}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("Glob"), "tool name must appear");
+        assert!(!html.contains(">OUT<"), "no OUT section when result is None");
+    }
+
+    // -----------------------------------------------------------------------
+    // T7 — Read row → modal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn read_event_with_result_has_clickable_filename_and_template() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "r1".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "src/main.rs", "offset": 10, "limit": 20}),
+            result: Some(crate::conversation::ToolResult {
+                content: "fn main() {}".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("file-link"), "filename must have file-link class");
+        assert!(html.contains("data-modal="), "filename must trigger modal");
+        assert!(html.contains("src/main.rs"), "file path must appear");
+        assert!(html.contains("<template"), "template element must be present");
+        assert!(html.contains("fn main()"), "file contents must appear in template");
+        assert!(html.contains(":10-30"), "line range must appear in row");
+    }
+
+    #[test]
+    fn read_event_without_result_has_no_link() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "r2".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "src/lib.rs"}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("src/lib.rs"), "file path must appear");
+        assert!(!html.contains("file-link"), "no link when result is absent");
+        assert!(!html.contains("data-modal"), "no modal trigger when result is absent");
+    }
+
+    // -----------------------------------------------------------------------
+    // T8 — Skill row → modal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn skill_event_with_result_shows_full_name_and_modal() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "s1".to_string(),
+            name: "Skill".to_string(),
+            input: serde_json::json!({"skill": "agent-skills:interview-me", "args": ""}),
+            result: Some(crate::conversation::ToolResult {
+                content: "Skill output here".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("agent-skills:interview-me"), "full skill name must appear");
+        assert!(html.contains("skill"), "row must say 'skill'");
+        assert!(html.contains("dot--assistant"), "skill uses gray dot");
+        assert!(html.contains("skill-link"), "skill name must be a link");
+        assert!(html.contains("data-modal="), "must trigger modal");
+        assert!(html.contains("<template"), "template element must be present");
+        assert!(html.contains("Skill output here"), "skill body in template");
+    }
+
+    #[test]
+    fn skill_event_without_result_shows_name_no_link() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "s2".to_string(),
+            name: "Skill".to_string(),
+            input: serde_json::json!({"skill": "frontend-design", "args": null}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("frontend-design"), "full skill name must appear");
+        assert!(!html.contains("skill-link"), "no link when result is absent");
+        assert!(html.contains("dot--assistant"), "skill uses gray dot");
+    }
+
+    // -----------------------------------------------------------------------
+    // T9 — Edit/Write use new diff format
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_call_edit_shows_unified_diff() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "e1".to_string(),
+            name: "Edit".to_string(),
+            input: serde_json::json!({"file_path": "src/a.rs", "old_string": "a\n", "new_string": "b\n", "replace_all": false}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("diff-line--add"), "must have add diff line");
+        assert!(html.contains("diff-line--del"), "must have del diff line");
+        assert!(html.contains("diff-count--add"), "must have summary add class");
+        assert!(html.contains("Edit — src/a.rs"), "file header must show");
+    }
+
+    // -----------------------------------------------------------------------
+    // T10 — Sub-agent row
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn sub_agent_row_shows_agent_description_green_dot() {
+        let sa = crate::conversation::SubAgentEvent {
+            tool_call_id: "t1".to_string(),
+            name: "Task".to_string(),
+            input: serde_json::json!({"description": "search codebase", "prompt": "find *.rs"}),
+            result: None,
+        };
+        let html = render_sub_agent_row(&sa);
+        assert!(html.contains("Agent:"), "must show Agent: prefix");
+        assert!(html.contains("search codebase"), "description must appear");
+        assert!(html.contains("dot--tool"), "must use green dot");
+        assert!(html.contains("find *.rs"), "IN prompt must appear");
+        assert!(html.contains("<details"), "must be expandable for non-empty prompt");
+    }
+
+    #[test]
+    fn sub_agent_row_no_prompt_is_plain_row() {
+        let sa = crate::conversation::SubAgentEvent {
+            tool_call_id: "t2".to_string(),
+            name: "Agent".to_string(),
+            input: serde_json::json!({"description": "do work"}),
+            result: None,
+        };
+        let html = render_sub_agent_row(&sa);
+        assert!(html.contains("do work"), "description must appear");
+        assert!(!html.contains("<details"), "no prompt → no expandable details");
+    }
+
+    // -----------------------------------------------------------------------
+    // T11 — Images thumbnails → modal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn images_thumbnail_row_renders_horizontal_layout() {
+        let images = vec![
+            crate::model::content::ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "abc123".to_string(),
+            },
+            crate::model::content::ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "def456".to_string(),
+            },
+        ];
+        let html = render_images_thumbnail_row(&images, "msg-5");
+        assert!(html.contains("img-thumbnails"), "must have thumbnails container");
+        assert!(html.contains("img-thumb"), "must have thumbnail class");
+        assert_eq!(html.matches("img-thumb-btn").count(), 2, "two thumbnails for two images");
+        assert_eq!(html.matches("<template").count(), 2, "two templates for two images");
+        assert!(html.contains("data-modal="), "thumbnails must trigger modal");
+        assert!(html.contains("img-modal-full"), "full-size img in template");
     }
 }

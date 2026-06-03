@@ -14,12 +14,11 @@ use askama::Template;
 use uuid::Uuid;
 
 use crate::aggregate::SessionAggregate;
-use crate::conversation::DisplayItem;
+use crate::conversation::{flatten_to_timeline, TimelineEvent};
 use crate::model::content::ContentItem;
 use crate::model::entry::TranscriptEntry;
 use crate::session::Session;
 
-use super::markdown;
 use super::tools;
 use super::turn;
 
@@ -125,6 +124,10 @@ pub struct TranscriptContext {
     /// Project directory name for the back-link in the header.
     /// `None` when the session is exported standalone (no project context).
     pub project_name: Option<String>,
+    /// Turn counts for the session header strip.
+    pub turn_user_count: usize,
+    pub turn_assistant_count: usize,
+    pub turn_tool_count: usize,
 }
 
 pub struct SidebarNavItem {
@@ -166,6 +169,38 @@ pub struct MessageCard {
 // Context builder
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Turn-count helper
+// ---------------------------------------------------------------------------
+
+/// Count user turns, assistant turns, and tool calls (recursively including
+/// sub-agents) from the session's turn groups. Used in the session header.
+fn compute_turn_counts(session: &Session) -> (usize, usize, usize) {
+    let turns = crate::conversation::group_into_turns(session);
+    let mut user_count = 0usize;
+    let mut assistant_count = 0usize;
+    let mut tool_count = 0usize;
+
+    for turn in &turns {
+        match turn {
+            crate::conversation::TurnGroup::User(_) => user_count += 1,
+            crate::conversation::TurnGroup::Assistant(at) => {
+                assistant_count += 1;
+                tool_count += at.tool_calls.len();
+                for sa in &at.sub_agents {
+                    tool_count += sa.tool_calls.len();
+                }
+            }
+        }
+    }
+
+    (user_count, assistant_count, tool_count)
+}
+
+// ---------------------------------------------------------------------------
+// Context builder
+// ---------------------------------------------------------------------------
+
 /// Build a [`TranscriptContext`] from a parsed session and its aggregate.
 ///
 /// `project_name` enables the `← {project}` back-link in the header.
@@ -176,7 +211,7 @@ pub fn build_context(
     css: String,
     project_name: Option<&str>,
 ) -> TranscriptContext {
-    let message_cards = build_turn_cards(session);
+    let message_cards = build_flat_timeline_cards(session);
     let sidebar_nav_items = build_sidebar_nav(&message_cards);
     let file_tree = build_file_tree(agg);
     let tool_counts = build_tool_counts(agg);
@@ -192,6 +227,7 @@ pub fn build_context(
     let token_total = format_token_count(raw_total);
 
     let first_user_prompt = find_first_user_prompt(session);
+    let (turn_user_count, turn_assistant_count, turn_tool_count) = compute_turn_counts(session);
 
     TranscriptContext {
         css,
@@ -210,6 +246,9 @@ pub fn build_context(
         message_cards,
         first_user_prompt,
         project_name: project_name.map(|s| s.to_string()),
+        turn_user_count,
+        turn_assistant_count,
+        turn_tool_count,
     }
 }
 
@@ -222,7 +261,7 @@ pub fn build_context_paginated(
     page: &super::pagination::Page,
     project_name: Option<&str>,
 ) -> TranscriptContext {
-    let all_cards = build_turn_cards(session);
+    let all_cards = build_flat_timeline_cards(session);
     let page_cards: Vec<MessageCard> = all_cards
         .into_iter()
         .skip(page.message_range.start)
@@ -241,6 +280,7 @@ pub fn build_context_paginated(
     let token_total = format_token_count(raw_total);
 
     let first_user_prompt = if page.is_first { find_first_user_prompt(session) } else { None };
+    let (turn_user_count, turn_assistant_count, turn_tool_count) = compute_turn_counts(session);
 
     TranscriptContext {
         css,
@@ -259,6 +299,9 @@ pub fn build_context_paginated(
         message_cards: page_cards,
         first_user_prompt,
         project_name: project_name.map(|s| s.to_string()),
+        turn_user_count,
+        turn_assistant_count,
+        turn_tool_count,
     }
 }
 
@@ -273,128 +316,90 @@ fn format_token_count(n: u64) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Turn card builder (v2 — conversational turns)
+// Flat timeline card builder (v3 — individual timeline events)
 // ---------------------------------------------------------------------------
 
-fn build_turn_cards(session: &Session) -> Vec<MessageCard> {
-    let items = crate::conversation::group_session(session);
+fn build_flat_timeline_cards(session: &Session) -> Vec<MessageCard> {
+    let events = flatten_to_timeline(session);
     let mut cards: Vec<MessageCard> = Vec::new();
 
-    for (idx, item) in items.iter().enumerate() {
+    for (idx, event) in events.iter().enumerate() {
         let anchor = format!("msg-{}", idx + 1);
 
-        match item {
-            DisplayItem::Turn(turn_group) => {
-                let html = turn::render_turn_group(turn_group);
-                let (kind_class, snippet, filter_role) = match turn_group {
-                    crate::conversation::TurnGroup::User(ut) => {
-                        ("turn-user", Some(ut.message.clone()), "user")
-                    }
-                    crate::conversation::TurnGroup::Assistant(at) => {
-                        let snip = if at.message_text.is_empty() {
-                            None
-                        } else {
-                            Some(truncate_snippet(&at.message_text, 60))
-                        };
-                        ("turn-assistant", snip, "assistant")
-                    }
+        match event {
+            TimelineEvent::UserMessage(ut) => {
+                let snippet = if ut.message.is_empty() {
+                    None
+                } else {
+                    Some(truncate_snippet(&ut.message, 60))
                 };
                 cards.push(MessageCard {
-                    kind_class: kind_class.to_string(),
-                    html,
+                    kind_class: "timeline-user".to_string(),
+                    html: turn::render_user_block(ut),
                     anchor,
                     snippet,
-                    filter_role: filter_role.to_string(),
+                    filter_role: "user".to_string(),
                     filter_tools: String::new(),
                 });
             }
-            DisplayItem::Entry(entry) => {
-                if let Some((kind_class, html, snippet)) = render_standalone_entry(entry.as_ref()) {
-                    let (filter_role, filter_tools) = filter_attrs(&kind_class);
-                    cards.push(MessageCard {
-                        kind_class,
-                        html,
-                        anchor,
-                        snippet,
-                        filter_role,
-                        filter_tools,
-                    });
-                }
+            TimelineEvent::AssistantText { text, images, .. } => {
+                let snippet = if text.is_empty() { None } else { Some(truncate_snippet(text, 60)) };
+                cards.push(MessageCard {
+                    kind_class: "timeline-assistant-text".to_string(),
+                    html: turn::render_assistant_text_row(text, images),
+                    anchor,
+                    snippet,
+                    filter_role: "assistant".to_string(),
+                    filter_tools: String::new(),
+                });
+            }
+            TimelineEvent::Thinking(ts) => {
+                cards.push(MessageCard {
+                    kind_class: "timeline-thinking".to_string(),
+                    html: tools::render_thinking_row(&ts.text),
+                    anchor,
+                    snippet: None,
+                    filter_role: "assistant".to_string(),
+                    filter_tools: String::new(),
+                });
+            }
+            TimelineEvent::ToolCall(tc) => {
+                let kind_class = format!("timeline-tool-{}", tc.name);
+                let html = tools::render_tool_call_event(tc);
+                let (filter_role, filter_tools) = filter_attrs(&kind_class);
+                cards.push(MessageCard {
+                    kind_class,
+                    html,
+                    anchor,
+                    snippet: None,
+                    filter_role,
+                    filter_tools,
+                });
+            }
+            TimelineEvent::SubAgent(sa) => {
+                cards.push(MessageCard {
+                    kind_class: "timeline-agent".to_string(),
+                    html: tools::render_sub_agent_row(sa),
+                    anchor,
+                    snippet: None,
+                    filter_role: String::new(),
+                    filter_tools: String::new(),
+                });
+            }
+            TimelineEvent::Images(images) => {
+                cards.push(MessageCard {
+                    kind_class: "timeline-images".to_string(),
+                    html: tools::render_images_thumbnail_row(images, &anchor),
+                    anchor,
+                    snippet: None,
+                    filter_role: String::new(),
+                    filter_tools: String::new(),
+                });
             }
         }
     }
 
     cards
-}
-
-/// Render non-conversation entries (system, summary, hook, etc.) that are
-/// not grouped into turns.
-fn render_standalone_entry(entry: &TranscriptEntry) -> Option<(String, String, Option<String>)> {
-    match entry {
-        TranscriptEntry::Summary(se) => {
-            let ts = format_ts(&se.common.timestamp);
-            let body = se.summary.clone().unwrap_or_default();
-            Some((
-                "message-summary".to_string(),
-                tools::wrap_card(
-                    "Summary",
-                    "message-dot--assistant",
-                    "message-card-header--assistant",
-                    &body,
-                    false,
-                    &ts,
-                ),
-                None,
-            ))
-        }
-        TranscriptEntry::System(se) => {
-            let (k, h) = render_system_entry(se);
-            Some((k, h, None))
-        }
-        TranscriptEntry::HookAttachment(he) => {
-            let (k, h) = render_hook_attachment(he);
-            Some((k, h, None))
-        }
-        TranscriptEntry::AwaySummary(asum) => {
-            let ts = format_ts(&asum.common.timestamp);
-            let body = asum.summary.clone().unwrap_or_else(|| "(no summary text)".to_string());
-            Some((
-                "message-away".to_string(),
-                tools::wrap_card(
-                    "Away Summary",
-                    "message-dot--file",
-                    "message-card-header--system",
-                    &html_escape_text(&body),
-                    false,
-                    &ts,
-                ),
-                None,
-            ))
-        }
-        TranscriptEntry::QueueOperation(qe) => {
-            let ts = format_ts(&qe.common.timestamp);
-            let body = qe
-                .operation
-                .as_ref()
-                .map(|v| format!(r#"<pre class="raw-json">{}</pre>"#, pretty_json(v)))
-                .unwrap_or_else(|| "(no payload)".to_string());
-            Some((
-                "message-system".to_string(),
-                tools::wrap_card(
-                    "Queue Operation",
-                    "message-dot--file",
-                    "message-card-header--system",
-                    &body,
-                    false,
-                    &ts,
-                ),
-                None,
-            ))
-        }
-        TranscriptEntry::Unknown { .. } => None,
-        // User / Assistant entries are handled by turn grouping.
-        TranscriptEntry::User(_) | TranscriptEntry::Assistant(_) => None,
-    }
 }
 
 /// Collapse whitespace and truncate to `max_chars` graphemes-ish (chars).
@@ -410,7 +415,19 @@ fn truncate_snippet(s: &str, max_chars: usize) -> String {
 
 /// Extract role and tool names from a `kind_class` for filter data attributes.
 fn filter_attrs(kind_class: &str) -> (String, String) {
+    // v3 flat timeline kind classes.
+    if let Some(tool) = kind_class.strip_prefix("timeline-tool-") {
+        let tools = match tool {
+            "MultiEdit" => "Edit".to_string(),
+            other => other.to_string(),
+        };
+        return (String::new(), tools);
+    }
     match kind_class {
+        "timeline-user" => ("user".to_string(), String::new()),
+        "timeline-assistant-text" | "timeline-thinking" => ("assistant".to_string(), String::new()),
+        "timeline-agent" | "timeline-images" => (String::new(), String::new()),
+        // Legacy v2 classes kept for backward compat with stub and tests.
         "turn-user" | "message-user" => ("user".to_string(), String::new()),
         "turn-assistant" | "message-assistant" => ("assistant".to_string(), String::new()),
         "message-tool-Bash" => (String::new(), "Bash".to_string()),
@@ -422,10 +439,16 @@ fn filter_attrs(kind_class: &str) -> (String, String) {
     }
 }
 
+// These helpers are only used by the D1 tests (system/hook card format).
+// They will be re-wired in P3/T12 when standalone entry rendering is added
+// back to the flat timeline. The allow(dead_code) silences clippy in
+// non-test builds.
+#[allow(dead_code)]
 fn format_ts(ts: &chrono::DateTime<chrono::Utc>) -> String {
-    ts.with_timezone(&chrono::Local).format("%H:%M:%S · %b %d").to_string()
+    ts.with_timezone(&chrono::Local).format("%H:%M:%S").to_string()
 }
 
+#[allow(dead_code)]
 fn render_system_entry(se: &crate::model::entry::SystemEntry) -> (String, String) {
     let ts = format_ts(&se.common.timestamp);
     let subtype = se.subtype.as_deref().unwrap_or("system");
@@ -488,6 +511,7 @@ fn render_system_entry(se: &crate::model::entry::SystemEntry) -> (String, String
     )
 }
 
+#[allow(dead_code)]
 fn render_hook_attachment(he: &crate::model::entry::HookAttachmentEntry) -> (String, String) {
     let ts = format_ts(&he.common.timestamp);
     let att = he.attachment.as_ref();
@@ -559,10 +583,12 @@ fn render_hook_attachment(he: &crate::model::entry::HookAttachmentEntry) -> (Str
     )
 }
 
+#[allow(dead_code)]
 fn html_escape_text(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
+#[allow(dead_code)]
 fn pretty_json(v: &serde_json::Value) -> String {
     html_escape_text(&serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()))
 }
@@ -617,18 +643,22 @@ fn build_sidebar_nav(cards: &[MessageCard]) -> Vec<SidebarNavItem> {
 }
 
 fn kind_visuals(kind: &str) -> (&'static str, &'static str, &'static str) {
+    // v3 flat timeline kind classes.
+    if kind.starts_with("timeline-tool-") {
+        return ("Tool", "&#x2328;", "sidebar-nav-dot--tool");
+    }
     match kind {
+        "timeline-user" => ("User", "&#x1F464;", "sidebar-nav-dot--user"),
+        "timeline-assistant-text" => ("Assistant", "&#x1F916;", "sidebar-nav-dot--assistant"),
+        "timeline-thinking" => ("Thinking", "&#x1F9E0;", "sidebar-nav-dot--thinking"),
+        "timeline-agent" => ("Agent", "&#x2328;", "sidebar-nav-dot--tool"),
+        "timeline-images" => ("Images", "&#x1F4F7;", "sidebar-nav-dot--file"),
+        // Legacy v2 classes kept for backward compat.
         "turn-user" | "message-user" => ("User", "&#x1F464;", "sidebar-nav-dot--user"),
         "turn-assistant" | "message-assistant" => {
             ("Assistant", "&#x1F916;", "sidebar-nav-dot--assistant")
         }
-        "message-tool-Bash" => ("Bash", "&#x2328;", "sidebar-nav-dot--tool"),
-        "message-tool-Read" => ("Read", "&#x1F4D6;", "sidebar-nav-dot--tool"),
-        "message-tool-Write" => ("Write", "&#x1F4DD;", "sidebar-nav-dot--tool"),
-        "message-tool-Edit" => ("Edit", "&#x1F4DD;", "sidebar-nav-dot--tool"),
-        "message-tool-MultiEdit" => ("MultiEdit", "&#x1F4DD;", "sidebar-nav-dot--tool"),
         "message-thinking" => ("Thinking", "&#x1F9E0;", "sidebar-nav-dot--thinking"),
-        "message-tool-result" => ("Tool Result", "&#x2328;", "sidebar-nav-dot--tool"),
         "message-summary" => ("Summary", "&#x1F4CB;", "sidebar-nav-dot--assistant"),
         "message-system" => ("System", "&#x2699;", "sidebar-nav-dot--file"),
         "message-hook" => ("Hook", "&#x1F50C;", "sidebar-nav-dot--file"),
@@ -691,44 +721,41 @@ fn format_time(agg: &SessionAggregate) -> String {
 // ---------------------------------------------------------------------------
 
 pub fn stub_context() -> TranscriptContext {
+    use crate::conversation::UserTurn;
+    use chrono::TimeZone;
+    let ts = chrono::Utc.with_ymd_and_hms(2025, 10, 24, 10, 30, 0).unwrap();
+
+    let bash_tc = crate::conversation::ToolCallEvent {
+        id: "t1".to_string(),
+        name: "Bash".to_string(),
+        input: serde_json::json!({"command": "cargo build"}),
+        result: None,
+    };
+
     let cards = vec![
         MessageCard {
-            kind_class: "message-user".into(),
-            html: tools::wrap_card(
-                "User",
-                "message-dot--user",
-                "message-card-header--user",
-                &tools::render_user_message_text("use the /build command to compile"),
-                false,
-                "",
-            ),
+            kind_class: "timeline-user".into(),
+            html: turn::render_user_block(&UserTurn {
+                message: "use the /build command to compile".to_string(),
+                timestamp: ts,
+                images: vec![],
+            }),
             anchor: "msg-1".into(),
             snippet: Some("use the /build command to compile".into()),
             filter_role: "user".into(),
             filter_tools: String::new(),
         },
         MessageCard {
-            kind_class: "message-assistant".into(),
-            html: tools::wrap_card(
-                "Assistant",
-                "message-dot--assistant",
-                "message-card-header--assistant",
-                &markdown::render("I will run the build command."),
-                false,
-                "",
-            ),
+            kind_class: "timeline-assistant-text".into(),
+            html: turn::render_assistant_text_row("I will run the build command.", &[]),
             anchor: "msg-2".into(),
             snippet: Some("I will run the build command.".into()),
             filter_role: "assistant".into(),
             filter_tools: String::new(),
         },
         MessageCard {
-            kind_class: "message-tool-Bash".into(),
-            html: tools::render_tool_use(
-                "Bash",
-                &serde_json::json!({"command": "cargo build"}),
-                "t1",
-            ),
+            kind_class: "timeline-tool-Bash".into(),
+            html: tools::render_tool_call_event(&bash_tc),
             anchor: "msg-3".into(),
             snippet: None,
             filter_role: String::new(),
@@ -765,6 +792,9 @@ pub fn stub_context() -> TranscriptContext {
         message_cards: cards,
         first_user_prompt: Some("use the /build command to compile".to_string()),
         project_name: Some("demo-project".to_string()),
+        turn_user_count: 1,
+        turn_assistant_count: 1,
+        turn_tool_count: 1,
     }
 }
 
@@ -798,12 +828,14 @@ mod tests {
 
         assert!(ctx.message_count > 0);
         assert!(!ctx.message_cards.is_empty());
-        // Should have user and assistant turn cards.
+        // Should have user and assistant timeline cards.
         let kinds: Vec<&str> = ctx.message_cards.iter().map(|c| c.kind_class.as_str()).collect();
-        assert!(kinds.contains(&"turn-user"), "should contain turn-user, got: {kinds:?}");
+        assert!(kinds.contains(&"timeline-user"), "should contain timeline-user, got: {kinds:?}");
         assert!(
-            kinds.contains(&"turn-assistant"),
-            "should contain turn-assistant, got: {kinds:?}"
+            kinds
+                .iter()
+                .any(|k| *k == "timeline-assistant-text" || k.starts_with("timeline-tool-")),
+            "should contain assistant or tool timeline cards, got: {kinds:?}"
         );
     }
 
@@ -868,16 +900,20 @@ mod tests {
 
     #[test]
     fn filter_attrs_extracts_role_and_tools() {
+        // v3 kind classes.
+        assert_eq!(filter_attrs("timeline-user"), ("user".into(), "".into()));
+        assert_eq!(filter_attrs("timeline-assistant-text"), ("assistant".into(), "".into()));
+        assert_eq!(filter_attrs("timeline-thinking"), ("assistant".into(), "".into()));
+        assert_eq!(filter_attrs("timeline-tool-Bash"), ("".into(), "Bash".into()));
+        assert_eq!(filter_attrs("timeline-tool-Read"), ("".into(), "Read".into()));
+        assert_eq!(filter_attrs("timeline-tool-Write"), ("".into(), "Write".into()));
+        assert_eq!(filter_attrs("timeline-tool-Edit"), ("".into(), "Edit".into()));
+        assert_eq!(filter_attrs("timeline-tool-MultiEdit"), ("".into(), "Edit".into()));
+        // Legacy v2 classes still work.
         assert_eq!(filter_attrs("message-user"), ("user".into(), "".into()));
-        assert_eq!(filter_attrs("message-assistant"), ("assistant".into(), "".into()));
         assert_eq!(filter_attrs("message-tool-Bash"), ("".into(), "Bash".into()));
-        assert_eq!(filter_attrs("message-tool-Read"), ("".into(), "Read".into()));
-        assert_eq!(filter_attrs("message-tool-Write"), ("".into(), "Write".into()));
-        assert_eq!(filter_attrs("message-tool-Edit"), ("".into(), "Edit".into()));
-        assert_eq!(filter_attrs("message-tool-MultiEdit"), ("".into(), "Edit".into()));
         // Unknown kinds return empty strings.
         assert_eq!(filter_attrs("message-system"), ("".into(), "".into()));
-        assert_eq!(filter_attrs("message-hook"), ("".into(), "".into()));
     }
 
     #[test]
@@ -890,5 +926,242 @@ mod tests {
         // Filter data attributes on message cards.
         assert!(html.contains(r#"data-role="user""#), "should have data-role user");
         assert!(html.contains(r#"data-tools="Bash""#), "should have data-tools Bash");
+    }
+
+    // -----------------------------------------------------------------------
+    // D1 tests — per-card header metadata cleanup
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn format_ts_produces_time_only_no_date() {
+        use chrono::TimeZone;
+        let ts = chrono::Utc.with_ymd_and_hms(2025, 6, 15, 10, 30, 5).unwrap();
+        let formatted = format_ts(&ts);
+        // Should contain HH:MM:SS time.
+        assert!(formatted.contains(':'), "should contain time colon");
+        // Should not contain date substrings.
+        assert!(!formatted.contains("Jun"), "ts should not contain month: {formatted}");
+        assert!(!formatted.contains("2025"), "ts should not contain year: {formatted}");
+        assert!(!formatted.contains("15"), "ts should not contain day: {formatted}");
+    }
+
+    #[test]
+    fn system_entry_card_header_has_no_date_or_token_labels() {
+        use crate::model::entry::SystemEntry;
+        use chrono::TimeZone;
+        use uuid::Uuid;
+
+        let ts = chrono::Utc.with_ymd_and_hms(2025, 10, 20, 14, 5, 30).unwrap();
+        let se = SystemEntry {
+            common: crate::model::entry::CommonFields {
+                uuid: Uuid::nil(),
+                parent_uuid: None,
+                timestamp: ts,
+                session_id: "test-session".to_string(),
+                is_sidechain: false,
+                agent_id: None,
+                cwd: None,
+                git_branch: None,
+                version: None,
+            },
+            system: None,
+            subtype: Some("system".to_string()),
+            content: Some("System message body".to_string()),
+            duration_ms: None,
+            message_count: None,
+            hook_count: None,
+            hook_infos: None,
+            level: None,
+        };
+        let (_kind, html) = render_system_entry(&se);
+        // Extract the meta text (visible header time).
+        let meta_start = html.find("message-card-meta").unwrap();
+        let meta_end = html[meta_start..].find("</span>").unwrap();
+        let meta_text = &html[meta_start..meta_start + meta_end];
+        // Visible header text should only contain HH:MM:SS, no date.
+        assert!(!meta_text.contains("Oct"), "meta should not contain month: {meta_text}");
+        assert!(!meta_text.contains("2025"), "meta should not contain year: {meta_text}");
+        assert!(!meta_text.contains(" · "), "meta should not contain date separator");
+        // Card header should not contain token labels.
+        assert!(!html.contains("in:"), "card header should not contain in: {html}");
+        assert!(!html.contains("out:"), "card header should not contain out: {html}");
+        assert!(!html.contains("Cache"), "card header should not contain Cache: {html}");
+        // Time format: HH:MM:SS (digits separated by colons).
+        let has_time = meta_text.chars().filter(|&c| c == ':').count() == 2;
+        assert!(has_time, "meta should contain HH:MM:SS time: {meta_text}");
+    }
+
+    #[test]
+    fn hook_attachment_card_header_has_no_date_or_token_labels() {
+        use crate::model::entry::HookAttachmentEntry;
+        use chrono::TimeZone;
+        use uuid::Uuid;
+
+        let ts = chrono::Utc.with_ymd_and_hms(2025, 8, 10, 9, 0, 0).unwrap();
+        let he = HookAttachmentEntry {
+            common: crate::model::entry::CommonFields {
+                uuid: Uuid::nil(),
+                parent_uuid: None,
+                timestamp: ts,
+                session_id: "test-session".to_string(),
+                is_sidechain: false,
+                agent_id: None,
+                cwd: None,
+                git_branch: None,
+                version: None,
+            },
+            attachment: Some(serde_json::json!({
+                "hookName": "SessionStart",
+                "content": "hook output here"
+            })),
+        };
+        let (_kind, html) = render_hook_attachment(&he);
+        // Extract visible meta text.
+        let meta_start = html.find("message-card-meta").unwrap();
+        let meta_end = html[meta_start..].find("</span>").unwrap();
+        let meta_text = &html[meta_start..meta_start + meta_end];
+        assert!(!meta_text.contains("Aug"), "meta should not contain month: {meta_text}");
+        assert!(!meta_text.contains("2025"), "meta should not contain year: {meta_text}");
+        assert!(!html.contains("in:"), "card header should not contain in:");
+        assert!(!html.contains("out:"), "card header should not contain out:");
+        let has_time = meta_text.chars().filter(|&c| c == ':').count() == 2;
+        assert!(has_time, "meta should contain HH:MM:SS time: {meta_text}");
+    }
+
+    #[test]
+    fn full_render_from_fixture_has_no_date_or_token_labels_in_turn_headers() {
+        use crate::aggregate::aggregate;
+        use crate::parser::parse_reader;
+        use crate::session::build_session;
+        use std::io::Cursor;
+
+        let jsonl = crate::tests::fixture_linear_session();
+        let result = parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        let agg = aggregate(&session);
+        let ctx = build_context(&session, &agg, crate::assets::CSS.to_string(), None);
+        let html = ctx.render().expect("template should render");
+
+        // Turn headers should show only time. Extract visible text from <time> elements.
+        // Pattern: <time datetime="...">VISIBLE</time>
+        let mut pos = 0usize;
+        while let Some(tag_start) = html[pos..].find("<time ") {
+            let abs = pos + tag_start;
+            if let Some(content_start) = html[abs..].find('>') {
+                let c_start = abs + content_start + 1;
+                if let Some(time_end) = html[c_start..].find("</time>") {
+                    let visible = &html[c_start..c_start + time_end];
+                    assert!(
+                        !visible.contains("2025"),
+                        "visible time should not contain year: '{visible}'"
+                    );
+                    assert!(
+                        !visible.contains("Jun"),
+                        "visible time should not contain month: '{visible}'"
+                    );
+                    assert_eq!(
+                        visible.chars().filter(|&c| c == ':').count(),
+                        2,
+                        "visible time should be HH:MM:SS: '{visible}'"
+                    );
+                    pos = c_start + time_end + "</time>".len();
+                    continue;
+                }
+            }
+            pos += 1;
+        }
+        // No token labels in the entire output.
+        assert!(!html.contains("in:</span>"), "should not contain in: label");
+        assert!(!html.contains("out:</span>"), "should not contain out: label");
+        assert!(!html.contains("Cache Creation"), "should not contain Cache Creation");
+    }
+
+    // -----------------------------------------------------------------------
+    // E1 tests — aggregate counts in session header
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn session_header_contains_turn_counts() {
+        use crate::aggregate::aggregate;
+        use crate::parser::parse_reader;
+        use crate::session::build_session;
+        use std::io::Cursor;
+
+        let jsonl = crate::tests::fixture_linear_session();
+        let result = parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        let agg = aggregate(&session);
+        let ctx = build_context(&session, &agg, crate::assets::CSS.to_string(), None);
+        let html = ctx.render().expect("template should render");
+
+        // Session header should contain user, assistant, and tools counts.
+        assert!(html.contains("user"), "header should contain 'user'");
+        assert!(html.contains("assistant"), "header should contain 'assistant'");
+        assert!(html.contains("tools"), "header should contain 'tools'");
+    }
+
+    #[test]
+    fn turn_counts_are_accurate_against_fixture() {
+        use crate::parser::parse_reader;
+        use crate::session::build_session;
+        use std::io::Cursor;
+
+        let jsonl = crate::tests::fixture_linear_session();
+        let result = parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        // Verify counts from compute_turn_counts match expected.
+        let (user_count, assistant_count, tool_count) = compute_turn_counts(&session);
+        // Linear session fixture: 1 user prompt, 1 assistant turn with 1 Bash tool.
+        assert_eq!(user_count, 1, "expected 1 user turn");
+        assert_eq!(assistant_count, 1, "expected 1 assistant turn");
+        assert_eq!(tool_count, 1, "expected 1 tool call");
+    }
+
+    #[test]
+    fn stub_context_header_contains_turn_counts() {
+        let ctx = stub_context();
+        let html = ctx.render().expect("stub template should render");
+        assert!(html.contains("1 user"), "should contain user count");
+        assert!(html.contains("1 assistant"), "should contain assistant count");
+        assert!(html.contains("1 tools"), "should contain tools count");
+    }
+
+    // -----------------------------------------------------------------------
+    // E2 tests — footer cleanup
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn footer_does_not_contain_session_inactive_or_active() {
+        let ctx = stub_context();
+        let html = ctx.render().expect("stub template should render");
+        assert!(!html.contains("Session Inactive"), "footer should not contain Session Inactive");
+        assert!(!html.contains("Session Active"), "footer should not contain Session Active");
+    }
+
+    #[test]
+    fn footer_does_not_contain_total_tokens() {
+        let ctx = stub_context();
+        let html = ctx.render().expect("stub template should render");
+        // The footer should not have a "Total Tokens" label.
+        assert!(!html.contains("Total Tokens"), "footer should not contain Total Tokens");
+    }
+
+    #[test]
+    fn full_render_footer_does_not_contain_session_inactive_or_total_tokens() {
+        use crate::aggregate::aggregate;
+        use crate::parser::parse_reader;
+        use crate::session::build_session;
+        use std::io::Cursor;
+
+        let jsonl = crate::tests::fixture_linear_session();
+        let result = parse_reader(Cursor::new(&jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        let agg = aggregate(&session);
+        let ctx = build_context(&session, &agg, crate::assets::CSS.to_string(), None);
+        let html = ctx.render().expect("template should render");
+
+        assert!(!html.contains("Session Inactive"), "footer should not contain Session Inactive");
+        assert!(!html.contains("Session Active"), "footer should not contain Session Active");
+        assert!(!html.contains("Total Tokens"), "footer should not contain Total Tokens");
     }
 }

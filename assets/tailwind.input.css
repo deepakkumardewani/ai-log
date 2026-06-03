@@ -195,6 +195,25 @@ body {
 }
 .header-btn:hover { background: var(--surface-container); }
 
+/* Expand-all / collapse-all toggle in filter bar */
+.filter-toggle-btn {
+  padding: 4px 10px;
+  border-radius: 2px;
+  background: var(--surface-container);
+  color: var(--on-surface-variant);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.filter-toggle-btn:hover {
+  background: var(--surface-container-high);
+  color: var(--on-surface);
+}
+
 /* ===================================================================
    Layout: single-column (sidebar removed)
    =================================================================== */
@@ -361,15 +380,15 @@ details[open] > .pill-summary::before { transform: rotate(90deg); }
    Sub-agents (nested inside Tools pill)
    =================================================================== */
 .sub-agent {
-  margin: 8px 0;
+  margin: 8px 0 8px 12px;
   border: 1px solid var(--border);
-  border-left: 2px solid var(--primary);
+  border-left: 3px solid var(--primary);
   border-radius: 2px;
   overflow: hidden;
 }
 .sub-agent-summary {
   display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px;
+  padding: 8px 12px;
   font-family: var(--font-mono); font-size: 11px;
   color: var(--muted);
   cursor: pointer;
@@ -386,7 +405,7 @@ details[open] > .pill-summary::before { transform: rotate(90deg); }
 }
 details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 .sub-agent-body {
-  padding: 10px 12px;
+  padding: 12px 16px;
   border-top: 1px solid var(--border);
   font-size: 13px; line-height: 1.5;
 }
@@ -728,13 +747,40 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 }
 .thinking-empty { color: var(--muted); opacity: 0.7; }
 
-/* Message dots */
+/* Message dots (v2 card system — kept for backward compat) */
 .message-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
 .message-dot--user { background: var(--tertiary); }
 .message-dot--assistant { background: var(--primary); }
 .message-dot--thinking { background: var(--indigo-accent); }
 .message-dot--tool { background: var(--secondary); }
 .message-dot--file { background: var(--muted); }
+
+/* v3 timeline dot primitives */
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.dot--assistant { background: var(--text-secondary); }
+.dot--tool { background: var(--secondary); }
+
+/* v3 timeline row layout */
+.timeline-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.row-label {
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  flex: 1;
+}
+.row-meta {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: nowrap;
+  margin-left: 4px;
+}
 
 /* ===================================================================
    Tool IO
@@ -776,27 +822,43 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
   background: var(--surface-container-lowest);
   overflow-x: auto;
   padding: 8px 0;
+  border-radius: 2px;
 }
 .diff-line {
-  display: flex; gap: 8px;
+  display: flex; gap: 0;
   padding: 1px 12px; line-height: 1.5;
   white-space: pre-wrap; word-break: break-all;
 }
-.diff-line--add {
-  background: rgba(3, 218, 198, 0.1);
-  color: var(--secondary);
+.diff-line .ln {
+  display: inline-block;
+  min-width: 40px;
+  padding-right: 10px;
+  text-align: right;
+  color: var(--muted);
+  opacity: 0.5;
+  user-select: none;
+  flex-shrink: 0;
 }
+.diff-line .ln-old { margin-right: 4px; }
+.diff-line .ln-new { margin-right: 8px; }
+/* Warm green — readable on both light + dark */
+.diff-line--add {
+  background: rgba(91, 173, 117, 0.12);
+  color: var(--success);
+}
+/* Warm red — readable on both light + dark */
 .diff-line--del {
-  background: rgba(207, 102, 121, 0.1);
+  background: rgba(217, 102, 94, 0.12);
   color: var(--error);
 }
 .diff-line--ctx {
+  background: none;
   color: var(--muted);
 }
 .diff-summary {
-  font-family: var(--font-mono); font-size: 11px;
+  font-family: var(--font-mono); font-size: 10px;
   color: var(--muted); padding: 4px 12px 0;
-  text-transform: uppercase; letter-spacing: 0.04em;
+  text-transform: uppercase; letter-spacing: 0.05em;
 }
 
 /* ===================================================================
@@ -1464,13 +1526,274 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 }
 
 /* ===================================================================
-   Image placeholder
+   Embedded images
    =================================================================== */
-.image-placeholder {
-  padding: 20px; text-align: center;
-  background: var(--surface-container-lowest);
-  border: 1px dashed var(--border);
-  border-radius: 2px;
-  color: var(--muted);
+.embedded-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  margin: 12px 0;
+  display: block;
+}
+
+/* ===================================================================
+   v3 Shared modal
+   =================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.modal-overlay[hidden] { display: none; }
+.modal-dialog {
+  position: relative;
+  background: var(--surface-container);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-width: 800px;
+  width: 100%;
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.modal-close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--on-surface-variant);
+  font-size: 20px;
+  cursor: pointer;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  z-index: 1;
+}
+.modal-close:hover { background: var(--surface-container-high); }
+.modal-body {
+  overflow-y: auto;
+  padding: 16px;
+  flex: 1;
+}
+body.modal-open { overflow: hidden; }
+
+/* ===================================================================
+   v3 Flat Timeline — T4: User block + assistant text row
+   =================================================================== */
+
+/* User messages: muted faded block, no dot */
+.user-block {
+  background: var(--surface-container-low);
+  border-radius: 8px;
+  padding: 10px 16px;
+  max-width: 800px;
+  margin: 6px 0;
+}
+.user-block p { margin: 0 0 8px; }
+.user-block p:last-child { margin-bottom: 0; }
+
+/* row-body: prose content beside the dot (assistant text, etc.) */
+.row-body {
+  flex: 1;
+  line-height: 1.6;
+  min-width: 0;
+}
+.timeline-row--text { align-items: flex-start; padding: 6px 0; }
+.row-body p { margin: 0 0 8px; }
+.row-body p:last-child { margin-bottom: 0; }
+.row-body code {
   font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 5px;
+}
+.row-body pre {
+  font-family: var(--font-mono); font-size: 12px;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  margin-bottom: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ===================================================================
+   v3 Flat Timeline — T5: Thinking row (inline expand)
+   =================================================================== */
+
+.thinking-row { border: none; }
+.thinking-row > .timeline-row { cursor: pointer; list-style: none; }
+.thinking-row > .timeline-row::-webkit-details-marker { display: none; }
+.thinking-disabled { opacity: 0.5; color: var(--muted); pointer-events: none; }
+.thinking-body {
+  margin-left: 18px;
+  padding: 8px 0 8px 10px;
+  border-left: 2px solid var(--border);
+}
+.thinking-pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--on-surface-variant);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+}
+
+/* ===================================================================
+   v3 Flat Timeline — T6: Unified tool call row (details + IN/OUT)
+   =================================================================== */
+
+.tool-details { border: none; }
+.tool-details > .timeline-row { cursor: pointer; list-style: none; }
+.tool-details > .timeline-row::-webkit-details-marker { display: none; }
+.tool-details-body {
+  margin-left: 18px;
+  padding: 6px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 10px;
+}
+.tool-section {
+  margin-bottom: 6px;
+}
+.tool-section-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+}
+.tool-section-body {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--on-surface);
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  line-height: 1.5;
+}
+.tool-section--error .tool-section-body {
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
+}
+
+/* T7 — file-link trigger (Read filename → modal) */
+.file-link {
+  background: none;
+  border: none;
+  color: var(--primary);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+}
+.file-link:hover { color: var(--primary-container); }
+
+/* T8 — skill-link trigger (Skill name → modal) */
+.skill-link {
+  background: none;
+  border: none;
+  color: var(--on-surface);
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+  font-size: inherit;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.skill-link:hover { color: var(--primary); }
+
+/* File contents in modal (from Read) */
+.file-contents {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--on-surface);
+}
+
+/* ===================================================================
+   v3 Flat Timeline — T9: Diff intra-line token highlight
+   =================================================================== */
+
+.diff-count--add { color: var(--secondary); font-weight: 600; }
+.diff-count--del { color: var(--error); font-weight: 600; }
+.diff-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 4px 8px;
+  background: var(--surface-container-low);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+}
+
+/* Intra-line token spans — brighter than the line background */
+.diff-tok--del {
+  background: color-mix(in srgb, var(--error) 40%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.diff-tok--add {
+  background: color-mix(in srgb, var(--secondary) 40%, transparent);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* ===================================================================
+   v3 Flat Timeline — T11: Image thumbnails → modal
+   =================================================================== */
+
+.images-row { padding: 6px 0; }
+.img-thumbnails {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+}
+.img-thumb-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 2px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.img-thumb-btn:hover { border-color: var(--primary); }
+.img-thumb {
+  display: block;
+  width: 80px;
+  height: 60px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+.img-modal-full {
+  max-width: 100%;
+  max-height: 70vh;
+  display: block;
+  margin: 0 auto;
+  border-radius: 4px;
 }

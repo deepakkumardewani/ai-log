@@ -51,6 +51,8 @@ pub struct SubAgentTurn {
 pub struct UserTurn {
     pub message: String,
     pub timestamp: DateTime<Utc>,
+    /// Embedded images (base64 data) attached to the user message.
+    pub images: Vec<crate::model::content::ImageSource>,
 }
 
 /// An assistant turn — groups assistant messages, their thinking,
@@ -64,6 +66,8 @@ pub struct AssistantTurn {
     pub timestamp: DateTime<Utc>,
     pub total_in: u64,
     pub total_out: u64,
+    /// Embedded images (base64 data) attached to the assistant messages.
+    pub images: Vec<crate::model::content::ImageSource>,
 }
 
 /// A grouped conversational turn.
@@ -79,6 +83,61 @@ pub enum TurnGroup {
 pub enum DisplayItem {
     Turn(TurnGroup),
     Entry(Box<TranscriptEntry>),
+}
+
+// ---------------------------------------------------------------------------
+// v3 flat timeline types
+// ---------------------------------------------------------------------------
+
+/// The result of a tool execution.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolResult {
+    pub content: String,
+    pub is_error: bool,
+}
+
+/// A single tool-call event in the flat timeline, carrying its optional result.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolCallEvent {
+    pub id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+    /// Paired result, or `None` if the tool result wasn't received.
+    pub result: Option<ToolResult>,
+}
+
+/// A sub-agent spawn event (Task / Agent tool) in the flat timeline.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SubAgentEvent {
+    pub tool_call_id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+    /// Result content returned by the sub-agent, if available.
+    pub result: Option<String>,
+}
+
+/// A flat timeline event — the primary rendering model for v3.
+///
+/// Produced by [`flatten_to_timeline`]. Events appear in DFS (chronological)
+/// order; thinking, tool calls, and assistant text are siblings, never nested.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TimelineEvent {
+    /// A user message (text + optional images).
+    UserMessage(UserTurn),
+    /// A block of assistant text.
+    AssistantText {
+        text: String,
+        timestamp: DateTime<Utc>,
+        images: Vec<crate::model::content::ImageSource>,
+    },
+    /// A thinking block.
+    Thinking(ThinkingStep),
+    /// A non-sub-agent tool call with its paired result.
+    ToolCall(ToolCallEvent),
+    /// A sub-agent invocation (Task / Agent tool).
+    SubAgent(SubAgentEvent),
+    /// Embedded images from an assistant message.
+    Images(Vec<crate::model::content::ImageSource>),
 }
 
 // ---------------------------------------------------------------------------
@@ -108,10 +167,12 @@ pub fn group_into_turns(session: &Session) -> Vec<TurnGroup> {
         match &node.entry {
             TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
                 let text = extract_text_content(&ue.message);
-                if !text.is_empty() {
+                let images = extract_images(&ue.message);
+                if !text.is_empty() || !images.is_empty() {
                     turns.push(TurnGroup::User(UserTurn {
                         message: text,
                         timestamp: ue.common.timestamp,
+                        images,
                     }));
                 }
                 i += 1;
@@ -151,10 +212,12 @@ pub fn group_session(session: &Session) -> Vec<DisplayItem> {
         match &node.entry {
             TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
                 let text = extract_text_content(&ue.message);
-                if !text.is_empty() {
+                let images = extract_images(&ue.message);
+                if !text.is_empty() || !images.is_empty() {
                     items.push(DisplayItem::Turn(TurnGroup::User(UserTurn {
                         message: text,
                         timestamp: ue.common.timestamp,
+                        images,
                     })));
                 }
                 i += 1;
@@ -176,6 +239,125 @@ pub fn group_session(session: &Session) -> Vec<DisplayItem> {
     }
 
     items
+}
+
+/// Flatten a [`Session`] into a chronological `Vec<TimelineEvent>`.
+///
+/// Each content item (text, thinking, tool_use, image) within an assistant
+/// message becomes a separate event, preserving the order they appear in the
+/// original content array. Tool results are paired back to their
+/// [`ToolCallEvent`] or [`SubAgentEvent`] by `tool_use_id`.
+pub fn flatten_to_timeline(session: &Session) -> Vec<TimelineEvent> {
+    let ordered = dfs_order(session);
+    let mut events: Vec<TimelineEvent> = Vec::new();
+    // Maps tool_use_id → index into `events` for result pairing.
+    let mut tool_call_index: HashMap<String, usize> = HashMap::new();
+
+    for node in &ordered {
+        match &node.entry {
+            TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
+                let text = extract_text_content(&ue.message);
+                let images = extract_images(&ue.message);
+                events.push(TimelineEvent::UserMessage(UserTurn {
+                    message: text,
+                    timestamp: ue.common.timestamp,
+                    images,
+                }));
+            }
+            TranscriptEntry::User(ue) if is_tool_result_only(&ue.message) => {
+                for item in &ue.message.content {
+                    if let ContentItem::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } = item
+                    {
+                        if let Some(&idx) = tool_call_index.get(tool_use_id) {
+                            match &mut events[idx] {
+                                TimelineEvent::ToolCall(tc) => {
+                                    tc.result = Some(ToolResult {
+                                        content: content.as_string(),
+                                        is_error: is_error.unwrap_or(false),
+                                    });
+                                }
+                                TimelineEvent::SubAgent(sa) => {
+                                    sa.result = Some(content.as_string());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+            }
+            TranscriptEntry::Assistant(ae) => {
+                let timestamp = ae.common.timestamp;
+                let mut pending_images: Vec<crate::model::content::ImageSource> = Vec::new();
+
+                for item in &ae.message.content {
+                    match item {
+                        ContentItem::Image { source } => {
+                            pending_images.push(source.clone());
+                        }
+                        other => {
+                            // Flush accumulated images before any non-image item.
+                            if !pending_images.is_empty() {
+                                events.push(TimelineEvent::Images(std::mem::take(
+                                    &mut pending_images,
+                                )));
+                            }
+                            match other {
+                                ContentItem::Text { text } => {
+                                    let trimmed = text.trim();
+                                    if !trimmed.is_empty() {
+                                        events.push(TimelineEvent::AssistantText {
+                                            text: trimmed.to_string(),
+                                            timestamp,
+                                            images: vec![],
+                                        });
+                                    }
+                                }
+                                ContentItem::Thinking { thinking, .. } => {
+                                    events.push(TimelineEvent::Thinking(ThinkingStep {
+                                        text: thinking.clone(),
+                                    }));
+                                }
+                                ContentItem::ToolUse { id, name, input } => {
+                                    let idx = events.len();
+                                    if SUB_AGENT_TOOL_NAMES.contains(&name.as_str()) {
+                                        events.push(TimelineEvent::SubAgent(SubAgentEvent {
+                                            tool_call_id: id.clone(),
+                                            name: name.clone(),
+                                            input: input.clone(),
+                                            result: None,
+                                        }));
+                                    } else {
+                                        events.push(TimelineEvent::ToolCall(ToolCallEvent {
+                                            id: id.clone(),
+                                            name: name.clone(),
+                                            input: input.clone(),
+                                            result: None,
+                                        }));
+                                    }
+                                    tool_call_index.insert(id.clone(), idx);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                }
+
+                // Flush any trailing images with no following text.
+                if !pending_images.is_empty() {
+                    events.push(TimelineEvent::Images(pending_images));
+                }
+            }
+            _ => {
+                // System, summary, hook — not part of the conversation timeline.
+            }
+        }
+    }
+
+    events
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +407,7 @@ fn build_assistant_turn(
     let mut thinking: Option<ThinkingStep> = None;
     let mut tool_calls: Vec<ToolCall> = Vec::new();
     let mut sub_agents: Vec<SubAgentTurn> = Vec::new();
+    let mut images: Vec<crate::model::content::ImageSource> = Vec::new();
     let mut timestamp: Option<DateTime<Utc>> = None;
     let mut total_in: u64 = 0;
     let mut total_out: u64 = 0;
@@ -280,8 +463,8 @@ fn build_assistant_turn(
                             // Tool results within assistant messages are
                             // rare; they're handled in user entries below.
                         }
-                        ContentItem::Image { .. } => {
-                            // Ignore images for turn grouping.
+                        ContentItem::Image { source } => {
+                            images.push(source.clone());
                         }
                     }
                 }
@@ -353,6 +536,7 @@ fn build_assistant_turn(
             timestamp,
             total_in,
             total_out,
+            images,
         },
         consumed,
     )
@@ -406,7 +590,26 @@ fn extract_agent_result_text(result: &str) -> String {
 // ---------------------------------------------------------------------------
 
 fn has_text_content(msg: &crate::model::content::Message) -> bool {
-    msg.content.iter().any(|c| matches!(c, ContentItem::Text { text } if !text.trim().is_empty()))
+    msg.content.iter().any(|c| match c {
+        ContentItem::Text { text } => !text.trim().is_empty(),
+        ContentItem::Image { .. } => true,
+        _ => false,
+    })
+}
+
+fn extract_images(msg: &crate::model::content::Message) -> Vec<crate::model::content::ImageSource> {
+    msg.content
+        .iter()
+        .filter_map(
+            |c| {
+                if let ContentItem::Image { source } = c {
+                    Some(source.clone())
+                } else {
+                    None
+                }
+            },
+        )
+        .collect()
 }
 
 fn is_tool_result_only(msg: &crate::model::content::Message) -> bool {
@@ -447,6 +650,143 @@ mod tests {
         let result = parse_reader(Cursor::new(jsonl)).unwrap();
         let session = build_session(&result.entries);
         group_into_turns(&session)
+    }
+
+    fn parse_and_flatten(jsonl: &str) -> Vec<TimelineEvent> {
+        let result = parse_reader(Cursor::new(jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        flatten_to_timeline(&session)
+    }
+
+    // -----------------------------------------------------------------------
+    // T1 tests — flat timeline
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn timeline_user_then_assistant_text_in_order() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hello"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"hi there"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::AssistantText { .. }));
+        if let TimelineEvent::UserMessage(ref ut) = events[0] {
+            assert_eq!(ut.message, "hello");
+        }
+        if let TimelineEvent::AssistantText { ref text, .. } = events[1] {
+            assert_eq!(text, "hi there");
+        }
+    }
+
+    #[test]
+    fn timeline_thinking_is_sibling_not_nested() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"think"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"thinking","thinking":"deep thought"}},{{"type":"text","text":"result"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // UserMessage, Thinking, AssistantText — 3 siblings
+        assert_eq!(events.len(), 3);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::Thinking(_)));
+        assert!(matches!(events[2], TimelineEvent::AssistantText { .. }));
+        if let TimelineEvent::Thinking(ref ts) = events[1] {
+            assert_eq!(ts.text, "deep thought");
+        }
+    }
+
+    #[test]
+    fn timeline_tool_call_paired_with_result() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let tr1 = "550e8400-e29b-41d4-a716-446655440010";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"run"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"b1","name":"Bash","input":{{"command":"ls"}}}}]}}}}
+{{"type":"user","uuid":"{tr1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"b1","content":"file1\nfile2","is_error":false}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // UserMessage + ToolCall (no trailing user text)
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        if let TimelineEvent::ToolCall(ref tc) = events[1] {
+            assert_eq!(tc.id, "b1");
+            assert_eq!(tc.name, "Bash");
+            assert!(tc.result.is_some());
+            let result = tc.result.as_ref().unwrap();
+            assert_eq!(result.content, "file1\nfile2");
+            assert!(!result.is_error);
+        } else {
+            panic!("expected ToolCall at index 1, got {:?}", events[1]);
+        }
+    }
+
+    #[test]
+    fn timeline_sub_agent_is_separate_event() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let tr1 = "550e8400-e29b-41d4-a716-446655440010";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"delegate"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"task1","name":"Task","input":{{"description":"do work","prompt":"find files"}}}}]}}}}
+{{"type":"user","uuid":"{tr1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:10Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"task1","content":"Done: found 3 files","is_error":false}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        if let TimelineEvent::SubAgent(ref sa) = events[1] {
+            assert_eq!(sa.tool_call_id, "task1");
+            assert_eq!(sa.name, "Task");
+            assert_eq!(sa.result.as_deref(), Some("Done: found 3 files"));
+        } else {
+            panic!("expected SubAgent at index 1, got {:?}", events[1]);
+        }
+    }
+
+    #[test]
+    fn timeline_event_order_thinking_tool_text() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"go"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"thinking","thinking":"plan"}},{{"type":"tool_use","id":"b1","name":"Bash","input":{{"command":"echo hi"}}}},{{"type":"text","text":"done"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // UserMessage, Thinking, ToolCall, AssistantText = 4
+        assert_eq!(events.len(), 4);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::Thinking(_)));
+        assert!(matches!(events[2], TimelineEvent::ToolCall(_)));
+        assert!(matches!(events[3], TimelineEvent::AssistantText { .. }));
+    }
+
+    #[test]
+    fn timeline_tool_without_result_has_none_result() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"go"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"tool_use","id":"b1","name":"Bash","input":{{"command":"sleep 1"}}}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        assert_eq!(events.len(), 2);
+        if let TimelineEvent::ToolCall(ref tc) = events[1] {
+            assert!(tc.result.is_none(), "no tool_result message → result should be None");
+        } else {
+            panic!("expected ToolCall");
+        }
+    }
+
+    #[test]
+    fn timeline_empty_session_produces_no_events() {
+        let events = parse_and_flatten("");
+        assert!(events.is_empty());
     }
 
     // -----------------------------------------------------------------------
