@@ -19,8 +19,9 @@ Opens (or writes) a fully self-contained `session.html` — no CDN URLs, no exte
 - **Markdown Export**: Lightweight portable alternative to HTML, compatible with GitHub, GitLab, and LLM context windows
 - **Detail Levels**: `--detail full|high|low|minimal|user-only` — filter verbosity from everything down to user prompts only
 - **Compact Mode**: `--compact` strips timestamps and horizontal rules; pairs with `--detail low` for feeding past sessions to an LLM
-- **Rich Tool Rendering**: Bash commands, file reads/writes, diffs (unified `+/-`), MultiEdit, Glob, Grep, TodoWrite, and more rendered with full context
-- **Thinking Block Support**: Collapsible extended thinking sections
+- **Flat Dot-Timeline**: Conversation rendered as a chronological event stream — user messages as muted blocks, assistant text and thinking as gray dot-rows, tool calls as green dot-rows
+- **Rich Tool Rendering**: Bash IN/OUT sections, Read filename → file-contents modal, Edit/Write/MultiEdit unified diff with intra-line word highlights, Skill → modal, Agent rows with IN prompt
+- **Thinking Block Support**: Inline-expand thinking rows; empty thinking shown as a disabled pill
 - **Token Usage Tracking**: Per-message and per-session input/output token counts
 - **Zero-Config**: Sensible defaults — just point it at a JSONL file
 - **Multi-Project Export**: Export all your Claude Code projects at once with `cclog --all-projects`, generating a static navigable site with master index + per-project pages

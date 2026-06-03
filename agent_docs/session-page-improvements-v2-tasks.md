@@ -228,9 +228,9 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - Tool-call cards inside the Tools pill: time only on the card header.
 
 **Acceptance:**
-- [ ] Render-level test: per-card headers do not contain date substrings (e.g., `May`, `2026-`, `04/26/2026`).
-- [ ] Render-level test: per-card headers do not contain `in:` / `out:` / `Cache Creation` token labels.
-- [ ] Time format unchanged (`HH:MM:SS`).
+- [x] Render-level test: per-card headers do not contain date substrings (e.g., `May`, `2026-`, `04/26/2026`).
+- [x] Render-level test: per-card headers do not contain `in:` / `out:` / `Cache Creation` token labels.
+- [x] Time format unchanged (`HH:MM:SS`).
 
 **Verification:** `cargo test` + browser eyeball.
 
@@ -246,7 +246,7 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - Skill card header label changes from generic `Skill` to the full skill identifier (e.g., `agent-skills:interview-me`). Read the skill name from the tool input.
 
 **Acceptance:**
-- [ ] Render-level test: Skill tool with `name: "agent-skills:interview-me"` produces a card header containing `agent-skills:interview-me` literally.
+- [x] Render-level test: Skill tool with `name: "agent-skills:interview-me"` produces a card header containing `agent-skills:interview-me` literally.
 
 **Verification:** `cargo test render::tools::`.
 
@@ -262,8 +262,8 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - Already implemented in C1. This task is the test that codifies it as a regression-guard.
 
 **Acceptance:**
-- [ ] Render-level test: an assistant turn with `thinking = Some(ThinkingStep { text: "" })` produces `pill--disabled` markup, **not** a `<details>`.
-- [ ] Render-level test: an assistant turn with `thinking = None` produces no Thinking pill at all.
+- [x] Render-level test: an assistant turn with `thinking = Some(ThinkingStep { text: "" })` produces `pill--disabled` markup, **not** a `<details>`.
+- [x] Render-level test: an assistant turn with `thinking = None` produces no Thinking pill at all.
 
 **Verification:** `cargo test`.
 
@@ -282,8 +282,8 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - Counts derived from `group_into_turns` output (`turns.iter().filter(...).count()` for user/assistant; sum of `tool_calls.len() + sub_agents.len()` recursively for tools).
 
 **Acceptance:**
-- [ ] Render-level test: session header contains substrings matching `\d+ user`, `\d+ assistant`, `\d+ tool` (case-insensitive).
-- [ ] Counts are accurate against a known fixture (unit test that asserts exact numbers).
+- [x] Render-level test: session header contains substrings matching `\d+ user`, `\d+ assistant`, `\d+ tool` (case-insensitive).
+- [x] Counts are accurate against a known fixture (unit test that asserts exact numbers).
 
 **Verification:** `cargo test`.
 
@@ -300,9 +300,9 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - Leave any other footer content (build/version line, etc.) intact.
 
 **Acceptance:**
-- [ ] Render-level test: footer markup does **not** contain `session inactive`.
-- [ ] Render-level test: footer markup does **not** contain `total tokens` (or whatever the current label is — confirm during impl).
-- [ ] Existing footer tests that asserted these labels are flipped to assert absence (or deleted if redundant).
+- [x] Render-level test: footer markup does **not** contain `session inactive`.
+- [x] Render-level test: footer markup does **not** contain `total tokens` (or whatever the current label is — confirm during impl).
+- [x] Existing footer tests that asserted these labels are flipped to assert absence (or deleted if redundant).
 
 **Verification:** `cargo test`.
 
@@ -323,10 +323,10 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - No state persistence.
 
 **Acceptance:**
-- [ ] Clicking a Thinking / Tools `<summary>` in the browser opens its content.
-- [ ] Clicking again closes it.
-- [ ] Sub-agent toggles work independently of parent.
-- [ ] [optional] Expand-all / collapse-all controls work.
+- [x] Clicking a Thinking / Tools `<summary>` in the browser opens its content.
+- [x] Clicking again closes it.
+- [x] Sub-agent toggles work independently of parent.
+- [x] [optional] Expand-all / collapse-all controls work.
 
 **Verification:** Manual browser interaction against regenerated fixture.
 
@@ -350,10 +350,10 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - `.sub-agent` → indent (left margin or border-left) inside the Tools pill.
 
 **Acceptance:**
-- [ ] Browser eyeball: user turns visibly bubbles, assistant turns visibly flat cards. Both left-aligned.
-- [ ] Browser eyeball: diff colors are warm-leaning (not GitHub-default green/red), readable in both light and dark theme.
-- [ ] Browser eyeball: `<summary>` shows custom marker that rotates on open.
-- [ ] Self-containment test still passes (no CDN dependency introduced).
+- [x] Browser eyeball: user turns visibly bubbles, assistant turns visibly flat cards. Both left-aligned.
+- [x] Browser eyeball: diff colors are warm-leaning (not GitHub-default green/red), readable in both light and dark theme.
+- [x] Browser eyeball: `<summary>` shows custom marker that rotates on open.
+- [x] Self-containment test still passes (no CDN dependency introduced).
 
 **Verification:** Manual browser review against regenerated fixture in both light and dark mode (if dark mode is in scope from v0.1).
 
@@ -389,8 +389,8 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - **Never** delete a failing test without justifying why in the test removal commit message.
 
 **Acceptance:**
-- [ ] `cargo test` green.
-- [ ] No test is `#[ignore]`'d or commented out without a tracked TODO.
+- [x] `cargo test` green.
+- [x] No test is `#[ignore]`'d or commented out without a tracked TODO.
 
 **Verification:** `cargo test`.
 
@@ -412,9 +412,9 @@ This is the cheapest place to course-correct before metadata + theming layer on 
 - `just ci` clean.
 
 **Acceptance:**
-- [ ] All 7 success criteria from the spec visually verified.
+- [x] All 7 success criteria from the spec visually verified.
 - [x] `just ci` clean.(fmt + clippy + test).
-- [ ] Self-containment test passes.
+- [x] Self-containment test passes.
 
 **Verification:**
 ```bash
@@ -429,9 +429,9 @@ open tests/cclog-out/<some-session>.html
 
 ## Final checklist
 
-- [ ] All phase checkpoints (A, B, C, EF) have explicit human sign-off.
-- [ ] G1 + G2 complete.
-- [ ] No new dependencies added to `Cargo.toml`.
-- [ ] No external CDN URL introduced anywhere in assets.
-- [ ] Spec assumptions confirmed (or revised if proven wrong).
-- [ ] Ready for `/code-review` and merge.
+- [x] All phase checkpoints (A, B, C, EF) have explicit human sign-off.
+- [x] G1 + G2 complete.
+- [x] No new dependencies added to `Cargo.toml`.
+- [x] No external CDN URL introduced anywhere in assets.
+- [x] Spec assumptions confirmed (or revised if proven wrong).
+- [x] Ready for `/code-review` and merge.
