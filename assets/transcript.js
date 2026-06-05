@@ -67,9 +67,11 @@
 
   function applyFilter(active) {
     var anyActive = Object.keys(active).some(function (k) { return active[k]; });
+    // All chips selected == no filter: show everything (prevents hiding unmatched tool types).
+    var allActive = FILTER_CHIPS.every(function (f) { return active[f.key]; });
     var wrappers = document.querySelectorAll('.message-card-wrapper');
     wrappers.forEach(function (w) {
-      if (!anyActive) {
+      if (!anyActive || allActive) {
         w.hidden = false;
         return;
       }
@@ -191,10 +193,12 @@
   function syncVisibility() {
     var active = readFilterFromHash();
     var anyActive = Object.keys(active).some(function (k) { return active[k]; });
+    // All chips selected == no filter: show everything (prevents hiding unmatched tool types).
+    var allActive = FILTER_CHIPS.every(function (f) { return active[f.key]; });
     var wrappers = document.querySelectorAll('.message-card-wrapper');
     wrappers.forEach(function (w) {
       var filterVisible;
-      if (!anyActive) {
+      if (!anyActive || allActive) {
         filterVisible = true;
       } else {
         var role = w.getAttribute('data-role') || '';
@@ -295,17 +299,21 @@
   // Shared modal
   // -----------------------------------------------------------------------
 
+  // Hoisted so initClamp (T20) can call openModal without depending on
+  // initModal having run first.
+  var openModal = null;
+
   function initModal() {
     var overlay = document.getElementById('cclog-modal');
     if (!overlay) return;
     var bodyEl = overlay.querySelector('.modal-body');
     var closeBtn = overlay.querySelector('.modal-close');
 
-    function openModal(html) {
+    openModal = function (html) {
       bodyEl.innerHTML = html;
       overlay.removeAttribute('hidden');
       document.body.classList.add('modal-open');
-    }
+    };
 
     function closeModal() {
       overlay.setAttribute('hidden', '');
@@ -340,6 +348,106 @@
   }
 
   // -----------------------------------------------------------------------
+  // T20 — IN/OUT clamp: detect overflow, add fade, wire click → modal
+  // -----------------------------------------------------------------------
+
+  function clampWrap(wrap) {
+    if (wrap.classList.contains('is-clamped') || wrap.dataset.clampChecked) return;
+    wrap.dataset.clampChecked = '1';
+    var pre = wrap.querySelector('pre');
+    if (!pre || pre.scrollHeight <= pre.clientHeight) return;
+    wrap.classList.add('is-clamped');
+    wrap.addEventListener('click', function () {
+      if (openModal) {
+        openModal('<pre class="modal-pre">' + escapeHtml(pre.textContent) + '</pre>');
+      }
+    });
+  }
+
+  function initClamp() {
+    // Initial pass: catch any visible (non-details) sections.
+    document.querySelectorAll('.tool-section-pre-wrap').forEach(clampWrap);
+
+    // Re-check when a <details> is opened — content only gets layout then.
+    document.addEventListener('toggle', function (e) {
+      if (!e.target.open) return;
+      e.target.querySelectorAll('.tool-section-pre-wrap').forEach(clampWrap);
+    }, true);
+  }
+
+  // -----------------------------------------------------------------------
+  // 5. Custom tooltip (data-tooltip="<text>")
+  //
+  // One tooltip element is shared and repositioned on each hover. Text is
+  // HTML-escaped so callers can safely pass arbitrary path strings.
+  // -----------------------------------------------------------------------
+
+  var tooltipEl = null;
+
+  function escapeHtml(str) {
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function positionTooltip(el, triggerRect) {
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var tw = el.offsetWidth;
+    var th = el.offsetHeight;
+    var GAP = 6;
+
+    // Prefer below, fall back to above.
+    var top = triggerRect.bottom + GAP;
+    if (top + th > vh - 4) {
+      top = triggerRect.top - th - GAP;
+    }
+    if (top < 4) top = 4;
+
+    // Center horizontally over trigger, clamp to viewport.
+    var left = triggerRect.left + triggerRect.width / 2 - tw / 2;
+    if (left + tw > vw - 4) left = vw - tw - 4;
+    if (left < 4) left = 4;
+
+    el.style.top = top + 'px';
+    el.style.left = left + 'px';
+  }
+
+  function initTooltip() {
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'cclog-tooltip';
+    tooltipEl.setAttribute('aria-hidden', 'true');
+    tooltipEl.setAttribute('hidden', '');
+    document.body.appendChild(tooltipEl);
+
+    document.addEventListener('mouseover', function (e) {
+      var target = e.target.closest('[data-tooltip]');
+      if (!target) return;
+      var text = target.getAttribute('data-tooltip');
+      if (!text) return;
+
+      tooltipEl.innerHTML = escapeHtml(text);
+      tooltipEl.removeAttribute('hidden');
+
+      // Position after making visible so offsetWidth/Height are correct.
+      var rect = target.getBoundingClientRect();
+      positionTooltip(tooltipEl, rect);
+    });
+
+    document.addEventListener('mouseout', function (e) {
+      var target = e.target.closest('[data-tooltip]');
+      if (!target) return;
+      // Hide only when leaving the trigger element itself.
+      if (!target.contains(e.relatedTarget)) {
+        tooltipEl.setAttribute('hidden', '');
+      }
+    });
+  }
+
+  // -----------------------------------------------------------------------
   // Boot
   // -----------------------------------------------------------------------
 
@@ -349,6 +457,8 @@
     initThemeToggle();
     initDetailsToggle();
     initModal();
+    initTooltip();
+    initClamp();
   }
 
   if (document.readyState === 'loading') {

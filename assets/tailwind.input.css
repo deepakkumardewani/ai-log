@@ -146,24 +146,25 @@ body {
   left: 0;
   z-index: 50;
 }
-.header-left { display: flex; align-items: center; gap: 12px; }
+.header-left { display: flex; align-items: center; gap: 16px; }
 .header-logo { display: flex; align-items: center; gap: 8px; }
-.header-logo-icon { color: var(--primary); font-size: 20px; }
+.header-logo-icon { color: var(--primary); font-size: 18px; }
 .header-logo-text {
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--on-surface);
 }
-.header-separator { width: 1px; height: 24px; background: var(--border); }
-.header-meta { display: flex; flex-direction: column; }
+.header-separator { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.header-meta { display: flex; flex-direction: column; gap: 3px; }
 .header-back-link {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--primary);
   text-decoration: none;
-  margin-bottom: 2px;
+  line-height: 1;
   transition: color 0.15s;
 }
 .header-back-link:hover {
@@ -173,14 +174,16 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
   color: var(--on-surface-variant);
+  line-height: 1;
 }
 .header-meta-stats {
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 5px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 11px;
   color: var(--muted);
+  line-height: 1;
 }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 .header-btn {
@@ -225,7 +228,8 @@ body {
 .main-content {
   flex: 1;
   overflow-y: auto;
-  padding: 24px;
+  /* T16: symmetric horizontal padding; max-width of message-list handles column width */
+  padding: 24px 32px;
   background: var(--background);
   display: flex;
   flex-direction: column;
@@ -284,9 +288,42 @@ button.filter-chip {
    Message List
    =================================================================== */
 .message-list {
-  display: flex; flex-direction: column; gap: 16px;
-  max-width: 800px; width: 100%; margin: 0 auto;
+  display: flex; flex-direction: column; gap: 8px;
+  max-width: 1040px; width: 100%; margin: 0 auto;
   padding: 12px 0 24px;
+  position: relative;
+}
+/* T22 — Left connector rail aligned to dot centre.
+   Non-user wrappers are indented by 20px, so dot centre = 20 + 4 = 24px.
+   Rail: left 23px, width 2px → spans 23-25px, centre 24px. */
+.message-list::before {
+  content: '';
+  position: absolute;
+  left: 23px;
+  top: 20px;
+  bottom: 20px;
+  width: 2px;
+  background: var(--border-subtle);
+  pointer-events: none;
+  z-index: 0;
+}
+/* Dot rows: indent 20px so dot centre (4px) lands at x=24px = rail centre */
+.message-card-wrapper:not(.timeline-user) {
+  margin-left: 20px;
+}
+/* User blocks: full width from x=0, z-index above the rail and a matching
+   background so they fully cover the rail line — creating a visual break.
+   Padding provides vertical breathing room while keeping the background
+   flush with the rail so no line peeks through above or below. */
+.message-card-wrapper.timeline-user {
+  position: relative;
+  z-index: 1;
+  background: var(--background);
+  padding: 4px 0;
+}
+/* Remove the margin from user-block since the wrapper handles spacing */
+.message-card-wrapper.timeline-user .user-block {
+  margin: 0;
 }
 .message-card-wrapper[hidden] { display: none !important; }
 
@@ -294,7 +331,7 @@ button.filter-chip {
    Turn Cards (v2 conversational view)
    =================================================================== */
 .turn {
-  max-width: 800px; width: 100%; margin: 0;
+  max-width: 1040px; width: 100%; margin: 0;
 }
 .turn-header {
   display: flex; align-items: center; gap: 8px;
@@ -756,7 +793,7 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 .message-dot--file { background: var(--muted); }
 
 /* v3 timeline dot primitives */
-.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 3px; position: relative; z-index: 1; }
 .dot--assistant { background: var(--text-secondary); }
 .dot--tool { background: var(--secondary); }
 
@@ -764,7 +801,7 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 .timeline-row {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
+  gap: 14px;
   padding: 4px 0;
   font-size: 13px;
   line-height: 1.5;
@@ -867,9 +904,9 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
    =================================================================== */
 .index-page,
 .project-page {
-  max-width: 960px;
+  max-width: 1200px;
   margin: 0 auto;
-  padding: 48px 24px 24px;
+  padding: 80px 32px 32px;
   min-height: 100vh;
 }
 /* ---- Header ---- */
@@ -940,6 +977,7 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--muted);
+  margin-bottom: 4px;
 }
 
 /* ---- Toolbar (single row at desktop) ---- */
@@ -955,9 +993,15 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 .index-toolbar-center {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  justify-content: center;
+}
+.toolbar-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border);
+  flex-shrink: 0;
+  align-self: center;
 }
 
 /* ---- Search ---- */
@@ -993,10 +1037,10 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
   color: var(--on-surface-variant);
   cursor: pointer;
@@ -1046,7 +1090,7 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
 .date-picker-to {
   background: var(--surface-container);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   padding: 4px 8px;
   color: var(--on-surface);
   font-family: var(--font-mono); font-size: 11px;
@@ -1390,16 +1434,12 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
   padding-top: 24px;
   border-top: 1px solid var(--border);
 }
-.index-footer code {
-  font-family: var(--font-mono);
-  color: var(--on-surface-variant);
-}
 
 /* ---- Responsive ---- */
 @media (max-width: 640px) {
   .index-page,
   .project-page {
-    padding: 32px 16px 16px;
+    padding: 80px 16px 16px;
   }
   .project-grid {
     grid-template-columns: 1fr;
@@ -1582,6 +1622,85 @@ details[open] > .sub-agent-summary::before { transform: rotate(90deg); }
   overflow-y: auto;
   padding: 16px;
   flex: 1;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--on-surface);
+}
+/* Prose styles for markdown content rendered inside the modal (Read .md, Skill body) */
+.modal-body h1,
+.modal-body h2,
+.modal-body h3,
+.modal-body h4 {
+  font-weight: 600;
+  margin: 16px 0 8px;
+  line-height: 1.3;
+}
+.modal-body h1 { font-size: 20px; }
+.modal-body h2 { font-size: 17px; }
+.modal-body h3 { font-size: 15px; }
+.modal-body h4 { font-size: 13px; color: var(--on-surface-variant); }
+.modal-body p { margin-bottom: 10px; }
+.modal-body p:last-child { margin-bottom: 0; }
+.modal-body ul,
+.modal-body ol { padding-left: 24px; margin-bottom: 10px; }
+.modal-body ul { list-style: disc; }
+.modal-body ol { list-style: decimal; }
+.modal-body li { margin-bottom: 4px; }
+.modal-body li > p { margin-bottom: 4px; }
+.modal-body ul:last-child,
+.modal-body ol:last-child { margin-bottom: 0; }
+.modal-body code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-container-high);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 5px;
+  color: var(--on-surface);
+}
+.modal-body pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--surface-container-lowest);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 10px 14px;
+  overflow-x: auto;
+  margin-bottom: 10px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.modal-body pre code { background: none; border: none; padding: 0; }
+.modal-body blockquote {
+  border-left: 3px solid var(--border-default);
+  padding-left: 12px;
+  margin: 8px 0;
+  color: var(--on-surface-variant);
+}
+.modal-body a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.modal-body table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+.modal-body th,
+.modal-body td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  text-align: left;
+}
+.modal-body th { background: var(--surface-container); font-weight: 600; }
+.modal-body hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 16px 0;
 }
 body.modal-open { overflow: hidden; }
 
@@ -1589,13 +1708,15 @@ body.modal-open { overflow: hidden; }
    v3 Flat Timeline — T4: User block + assistant text row
    =================================================================== */
 
-/* User messages: muted faded block, no dot */
+/* User messages: muted faded block, no dot — T17: contrast + padding
+   T22: sits at x=0 (full width), background covers the rail → breaks the thread */
 .user-block {
-  background: var(--surface-container-low);
-  border-radius: 8px;
-  padding: 10px 16px;
-  max-width: 800px;
-  margin: 6px 0;
+  background: var(--surface-container);
+  border-left: 3px solid var(--state-user);
+  border-radius: 6px;
+  padding: 14px 20px;
+  max-width: 1040px;
+  margin: 4px 0;
 }
 .user-block p { margin: 0 0 8px; }
 .user-block p:last-child { margin-bottom: 0; }
@@ -1696,18 +1817,46 @@ body.modal-open { overflow: hidden; }
   background: color-mix(in srgb, var(--error) 8%, var(--surface));
 }
 
+/* T20 — IN/OUT overflow clamping: max-height + fade + click-to-modal */
+.tool-section-pre-wrap {
+  position: relative;
+}
+.tool-section-pre-wrap .tool-section-body {
+  max-height: 12rem;
+  overflow: hidden;
+}
+.tool-section-pre-wrap.is-clamped {
+  cursor: pointer;
+}
+.tool-section-pre-wrap.is-clamped::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2.5rem;
+  background: linear-gradient(transparent, var(--surface-container-lowest));
+  pointer-events: none;
+}
+.tool-section--error .tool-section-pre-wrap.is-clamped::after {
+  background: linear-gradient(transparent, color-mix(in srgb, var(--error) 8%, var(--surface)));
+}
+
 /* T7 — file-link trigger (Read filename → modal) */
 .file-link {
   background: none;
   border: none;
-  color: var(--primary);
-  text-decoration: underline;
+  color: inherit;
+  text-decoration: none;
   cursor: pointer;
   padding: 0;
   font: inherit;
   font-size: inherit;
 }
-.file-link:hover { color: var(--primary-container); }
+.file-link:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
 
 /* T8 — skill-link trigger (Skill name → modal) */
 .skill-link {
@@ -1732,6 +1881,19 @@ body.modal-open { overflow: hidden; }
   word-break: break-word;
   margin: 0;
   color: var(--on-surface);
+}
+/* T20 — full content in modal (clamp overflow) */
+.modal-pre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
+  color: var(--on-surface);
+  background: none;
+  border: none;
+  padding: 0;
 }
 
 /* ===================================================================
@@ -1797,3 +1959,25 @@ body.modal-open { overflow: hidden; }
   margin: 0 auto;
   border-radius: 4px;
 }
+
+/* ===================================================================
+   T15 — Custom tooltip
+   =================================================================== */
+.cclog-tooltip {
+  position: fixed;
+  z-index: 2000;
+  max-width: 360px;
+  padding: 4px 8px;
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-all;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.cclog-tooltip[hidden] { display: none; }
