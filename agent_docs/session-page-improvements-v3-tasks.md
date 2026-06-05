@@ -121,14 +121,14 @@ Replace per-session grouped output with a flat ordered event stream.
 
 ## P3 — Cleanup & cross-cutting
 
-### [ ] T12 — Remove date/time from rows; footer cleanup
+### [x] T12 — Remove date/time from rows; footer cleanup
 - **Files:** `src/render/turn.rs`, `tools/mod.rs`, `templates/components/*`, `html.rs`.
 - **Do:** Remove per-row/per-card date and time. Remove footer "session inactive" / "total
   tokens" lines (if still present). Session-level metadata strip may keep its time.
 - **Acceptance:** no date/time on any row/card; footer cleaned.
 - **Verify:** grep for removed strings; browser scan.
 
-### [ ] T13 — Combined transcripts newest-first sort
+### [x] T13 — Combined transcripts newest-first sort
 - **Files:** `src/project.rs` (line ~114, currently `sort_by(id)`).
 - **Do:** Sort sessions **newest-first** by timestamp (use existing session timestamp; else
   derive from first/last message timestamp — note which).
@@ -140,7 +140,7 @@ Replace per-session grouped output with a flat ordered event stream.
 
 ## P4 — Verification
 
-### [ ] T14 — Full verification
+### [x] T14 — Full verification
 - **Do:** Regenerate HTML for both fixtures; in agent-browser walk every success criterion
   (#1–#12 in spec). Run `cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`,
   `cargo test`.
@@ -148,15 +148,140 @@ Replace per-session grouped output with a flat ordered event stream.
 - **Verify:** checklist below, all ticked.
 
 #### Success-criteria checklist (from spec)
-- [ ] Flat timeline, no grouping/nesting
-- [ ] User messages = distinct muted block, no dot
-- [ ] Gray dot (assistant/thinking/skill) · green dot (tool/sub-agent)
-- [ ] Thinking inline-expand; empty = disabled pill
-- [ ] Tool rows unified `● <Tool> <arg>`, IN/OUT only when present
-- [ ] Skill row `<name> skill` → modal
-- [ ] Read filename → file-contents modal
-- [ ] Edit/Write unified diff, line bg + word-token highlight, summary header
-- [ ] Sub-agent `Agent: <desc>` + IN prompt, no nested transcript
-- [ ] Images horizontal thumbnails → full-size modal
-- [ ] No date/time on rows/cards
-- [ ] Combined page newest-first
+- [x] Flat timeline, no grouping/nesting
+- [x] User messages = distinct muted block, no dot
+- [x] Gray dot (assistant/thinking/skill) · green dot (tool/sub-agent)
+- [x] Thinking inline-expand; empty = disabled pill
+- [x] Tool rows unified `● <Tool> <arg>`, IN/OUT only when present
+- [x] Skill row `<name> skill` → modal
+- [x] Read filename → file-contents modal
+- [x] Edit/Write unified diff, line bg + word-token highlight, summary header
+- [x] Sub-agent `Agent: <desc>` + IN prompt, no nested transcript
+- [x] Images horizontal thumbnails → full-size modal
+- [x] No date/time on rows/cards
+- [x] Combined page newest-first
+
+---
+
+# Round 2 — Refinements (T15–T26)
+
+Polish + bugfixes on shipped v3 (commit `57ebbaa`). Spec: **Round 2 — Refinements**; plan:
+**Round 2** section. Order follows the Round 2 dependency graph. Each task ends with an
+**agent-browser** check on both fixtures (NOT chrome-devtools MCP). Mark `[x]` when acceptance
+**and** verification pass.
+
+## R2-P0 — Shared primitives
+
+### [x] T15 — Custom tooltip component (R4 dep)
+- **Files:** `assets/transcript.js`, `assets/tailwind.input.css`, `templates/transcript.html`.
+- **Do:** A small reusable tooltip primitive: element with `data-tooltip="<text>"` shows a
+  positioned, escaped tooltip on hover; dismiss on mouse-leave. **Not** the native `title`
+  attribute. One open at a time; positioned to stay in viewport.
+- **Acceptance:** hovering a tagged element shows the custom tooltip; leaving hides it; text
+  is HTML-escaped.
+- **Verify:** agent-browser — hover a sample element, confirm custom tooltip appears.
+
+## R2-P1 — Layout & theming (CSS-centric, land together)
+
+### [x] T16 — Wider centered layout (R7)
+- **Files:** `assets/tailwind.input.css`, `templates/transcript.html`.
+- **Do:** Remove the empty left-gutter offset; widen the reading column to ~960–1100px,
+  centered with balanced gutters both sides.
+- **Acceptance:** timeline is centered (no large left gap); column noticeably wider.
+- **Verify:** agent-browser at a normal desktop width on both fixtures.
+
+### [x] T17 — User-block padding + contrast (R6)
+- **Files:** `templates/components/user_message.html`, `assets/tailwind.input.css`.
+- **Do:** Add inset padding so the user block no longer hugs the edge; give it a background
+  with sufficient contrast in **both** light and dark themes while staying muted vs assistant.
+- **Acceptance:** user block visibly distinct in both themes; text not flush-left.
+- **Verify:** agent-browser, toggle both themes.
+
+### [x] T22 — Left connector line (R2)
+- **Files:** `assets/tailwind.input.css`, `templates/components/*`.
+- **Do:** Vertical line down the left rail connecting consecutive dots; aligns with dot
+  centers across all row types; does not break the dot-less user block.
+- **Acceptance:** continuous thread line links dots; alignment correct for every row kind.
+- **Verify:** agent-browser visual on both fixtures.
+
+## R2-P2 — Data stage
+
+### [x] T19 — Meta-message filtering (R3)
+- **Files:** `src/conversation.rs` (timeline-event build), `src/session.rs`/`model` as needed.
+- **Do:** At the event-build stage, drop Claude-Code meta: messages flagged `isMeta` /
+  `isSidechain` where present, plus text-pattern fallback (`Caveat: … local commands` block,
+  `/model …` & slash-command echoes, local-command stdout, `Set model to …`). Keep real
+  prompts/assistant/thinking/tools. Filtering before render so search/filter counts are right.
+- **Acceptance:** the 3 known patterns no longer appear; a real user prompt still renders.
+- **Verify:** unit test (real prompt survives, 3 patterns dropped); agent-browser scan.
+
+## R2-P3 — Tool-row behavior (share `render/tools/mod.rs` + `transcript.js`)
+
+### [x] T20 — IN/OUT clamp → modal on overflow (R1)
+- **Files:** `src/render/tools/mod.rs`, `assets/tailwind.input.css`, `assets/transcript.js`.
+- **Do:** Keep IN/OUT visible-by-default with fixed max-height. When overflowing: fade bottom
+  + make the block clickable → full IN/OUT text in the **shared modal**. Short content shown
+  fully, not clickable. Tag overflowing blocks (CSS `max-height`; a tiny JS load-pass may set
+  an `is-clamped` flag for the click affordance).
+- **Acceptance:** long OUT clamps + opens full text in modal on click; short OUT not clickable.
+- **Verify:** unit test (modal payload = full string); agent-browser on a long Bash OUT.
+
+### [x] T18 — File-name basename + tooltip (R4) [needs T15]
+- **Files:** `src/render/tools/mod.rs` (Read/Write/Edit/MultiEdit rows), templates, CSS.
+- **Do:** Show **basename only** after the tool name (`Read — html.rs`), left-aligned (fix the
+  center-alignment). Attach the **full path** via the T15 `data-tooltip` on hover.
+- **Acceptance:** only basename inline; left-aligned; hover shows full path in custom tooltip.
+- **Verify:** unit test (row contains basename, tooltip carries full path); agent-browser hover.
+
+### [x] T21 — Modal markdown via comrak (R5)
+- **Files:** `src/render/tools/mod.rs` (skill/file-contents modal payloads).
+- **Do:** Route skill/markdown modal bodies through existing `render::markdown::render()`
+  (comrak — already a dep). **No new crate.** Code-file reads stay code (syntect/`<pre>`);
+  non-markdown stdout keeps `<pre>` fallback. Decide by tool kind + content type.
+- **Acceptance:** skill body renders formatted (headings/lists/code), not raw; code files
+  still render as code.
+- **Verify:** unit test (skill payload contains rendered HTML tags, not escaped MD); browser.
+
+## R2-P4 — Regressions + bug
+
+### [x] T23 — User-attached images horizontal (R8)
+- **Files:** `src/render/tools/mod.rs` (`render_image` + the user-attached path).
+- **Do:** Root-cause why **user-attached** images diverge from the correct horizontal-thumbnail
+  renderer; route them through the same small horizontal strip → full-size modal.
+- **Acceptance:** user-attached images sit side-by-side small; click → full-size modal.
+- **Verify:** agent-browser on a fixture with user-attached images.
+
+### [x] T24 — Skill body → modal (R9) [uses T21]
+- **Files:** `src/render/tools/mod.rs` (`render_skill_event`).
+- **Do:** Root-cause the inline skill-body regression; ensure the row shows only `<name> skill`
+  and the body opens in the modal on click (markdown via T21). No inline dump.
+- **Acceptance:** no inline skill content; name click → modal with formatted body.
+- **Verify:** unit test (row has no body, modal template present); agent-browser click.
+
+### [x] T25 — Filter-chip disappearing-tool bug (R10)
+- **Files:** `assets/transcript.js` (filter logic).
+- **Do:** Reproduce on session `08022288-1289-4f52-bdb6-7f9f0902f2a5` (tool
+  `mcp__…ctx_batch_execute` vanishes when all chips selected). Root-cause: unmatched tool types
+  only survive the show-all-when-none branch. Fix so unmatched tools stay visible under
+  all-selected (treat unmatched as always-shown, or make all-selected ≡ none-selected).
+- **Acceptance:** the mcp tool row is visible with no chips AND with all chips selected.
+- **Verify:** agent-browser on the named session — toggle none → all, row stays.
+
+## R2-P5 — Verification
+
+### [x] T26 — Round 2 full verification
+- **Do:** Regenerate both fixtures; in **agent-browser** walk R1–R10. Run `cargo fmt --all`,
+  `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+- **Acceptance:** all Round 2 items confirmed; CI clean.
+
+#### Round 2 checklist
+- [x] R1 IN/OUT clamp; overflow → modal; short not clickable
+- [x] R2 left connector line aligned across row types
+- [x] R3 meta messages (caveat / `/model` / `Set model`) hidden; real prompts kept
+- [x] R4 basename only + custom hover tooltip with full path; left-aligned
+- [x] R5 skill/markdown modal bodies formatted (comrak); code files still code
+- [x] R6 user block padded + contrast in both themes
+- [x] R7 layout wider + centered, no left gutter
+- [x] R8 user-attached images horizontal → modal
+- [x] R9 skill body in modal, not inline
+- [x] R10 filter chips: mcp tool visible under none AND all selected

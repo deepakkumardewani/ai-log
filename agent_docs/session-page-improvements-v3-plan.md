@@ -105,3 +105,83 @@ persistence, index/project redesign beyond sort, relative timestamps.
 ## Review Gate
 Present this plan + task list for human review before T1. Each phase checkpoint is a stop
 point: do not start the next phase until the checkpoint passes.
+
+---
+
+# Round 2 — Refinements (post-ship)
+
+v3 (T1–T11) shipped in commit `57ebbaa`. Round 2 is a polish + bugfix pass confirmed by
+interview on 2026-06-03. Spec section: **Round 2 — Refinements**; tasks **T15–T25**.
+
+## Strategy
+
+These are mostly **independent** edits on a working page, not a dependent build-up. Two
+exceptions create ordering: **R4** needs a small **custom tooltip primitive** and **R1** reuses
+the **existing shared modal**, so build/confirm those primitives are sound first, then fan out.
+Group the work by surface to minimize re-touching the same files:
+
+1. **Shared primitives first** — tooltip component (R4) and confirm the modal accepts the
+   overflow payload (R1). These unblock the file-name rows and IN/OUT.
+2. **Layout & theming pass** (cheap, high visual impact, low risk): R7 width/centering,
+   R6 user-block padding/contrast, R2 connector line. All CSS-centric in `tailwind.input.css`
+   + templates; land them together and eyeball once.
+3. **Data-stage fix**: R3 meta-message filtering at the timeline-event build (affects search
+   counts too) — do before the regressions so the fixtures render clean.
+4. **Tool-row behavior**: R1 IN/OUT clamp→modal, R4 basename+tooltip, R5 modal markdown.
+   These share `render/tools/mod.rs` + `transcript.js`; sequence to avoid conflicts.
+5. **Regressions**: R8 (vertical images), R9 (inline skill body) — each starts with a
+   root-cause read of the current renderer, then the fix.
+6. **Bug**: R10 filter-chip logic in `transcript.js` — isolated; root-cause against the named
+   session, add a regression note.
+
+**Vertical slices still apply:** every task ends with an agent-browser check on both fixtures.
+
+## Round 2 Dependency Graph
+
+```
+R2-P0 Primitives
+  T15 Custom tooltip component (JS+CSS)      ──► T18 (file-name rows)
+  (shared modal already exists — R1 reuses it)
+        │
+        ▼
+R2-P1 Layout & theming (parallel, CSS-centric)
+  T16 Wider centered layout (R7)
+  T17 User-block padding + contrast (R6)
+  T22 Left connector line (R2)
+        │
+        ▼
+R2-P2 Data stage
+  T19 Meta-message filtering (R3)  [timeline-event build]
+        │
+        ▼
+R2-P3 Tool-row behavior (share tools/mod.rs + transcript.js)
+  T20 IN/OUT clamp → modal on overflow (R1)   [needs modal]
+  T18 File-name basename + tooltip (R4)        [needs T15]
+  T21 Modal markdown via comrak (R5)
+        │
+        ▼
+R2-P4 Regressions + bug
+  T23 Images horizontal (R8)      [root-cause first]
+  T24 Skill body → modal (R9)     [root-cause first; uses T21 markdown]
+  T25 Filter-chip bug (R10)       [root-cause vs session 08022288…]
+        │
+        ▼
+R2-P5 Verification
+  T26 agent-browser walk of R1–R10 on both fixtures + cargo fmt/clippy/test
+```
+
+## Round 2 Risks & Mitigations
+
+| Risk | Mitigation |
+|------|------------|
+| R5 markdown-rendering code-file reads (e.g. `.ts`) would mangle them | Gate: only skill/`.md` bodies through comrak; code files keep syntect/`<pre>`. Decide by tool kind + content type, not blindly. |
+| R3 filtering hides real content (over-filtering) | Combine flag-driven (`isMeta`/`isSidechain`) with tightly-scoped text patterns; add a unit test asserting a real prompt survives and the 3 known patterns drop. |
+| R1 overflow detection in pure CSS may not know when to show the click affordance | Make the whole clamped block clickable but only when a `is-clamped` marker is set; if exact overflow detection is needed, a tiny JS pass on load can tag overflowing blocks. |
+| R10 fix could regress the existing chip filtering | Reproduce on session `08022288…` first; add a JS/unit-level assertion that an unmatched tool stays visible under all-selected. |
+| R8/R9 are regressions of "done" tasks | Start each with a root-cause read of the current renderer path; document why it diverged before patching. |
+| R2 connector line misaligns on dot-less user blocks | Rail line is independent of the user block; verify alignment across every row type in-browser. |
+
+## Round 2 Review Gate
+Land primitives + layout (R2-P0/P1) and eyeball once before the behavior/regression tasks.
+Each task ends with an **agent-browser** verification on both fixtures (per the user's
+standing preference: agent-browser CLI, not chrome-devtools MCP).

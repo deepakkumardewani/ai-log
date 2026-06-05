@@ -15,7 +15,7 @@ Opens (or writes) a fully self-contained `session.html` — no CDN URLs, no exte
 ## Key Features
 
 - **Self-Contained HTML**: Every output file embeds fonts, CSS tokens, and assets inline — nothing phones home
-- **Material 3 Dark Theme**: Clean, minimalist dark UI using Material Design 3 colour tokens and typography
+- **Light/Dark Themes**: Clean, minimalist UI using warm-neutral design tokens; dark by default with a toggleable light theme persisted to localStorage
 - **Markdown Export**: Lightweight portable alternative to HTML, compatible with GitHub, GitLab, and LLM context windows
 - **Detail Levels**: `--detail full|high|low|minimal|user-only` — filter verbosity from everything down to user prompts only
 - **Compact Mode**: `--compact` strips timestamps and horizontal rules; pairs with `--detail low` for feeding past sessions to an LLM
@@ -168,7 +168,7 @@ cclog export session.jsonl --open-browser
 
 ### HTML
 
-- Dark Material 3 theme with embedded design tokens
+- Warm-neutral light/dark theme with embedded design tokens
 - Tool calls rendered as collapsible cards with syntax highlighting
 - Unified diff view for `Edit` / `MultiEdit` tool calls
 - Token usage displayed per message and as a session total
