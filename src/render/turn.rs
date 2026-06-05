@@ -19,13 +19,17 @@ use crate::render::tools;
 
 /// Render a user message as a muted block (soft faded bubble, no dot).
 ///
+/// `card_id` is used to generate unique IDs for image thumbnail templates.
 /// Used in the v3 flat timeline. User messages are visually distinct from
 /// the dot-row pattern — they get a block/bubble style with no leading dot.
-pub fn render_user_block(ut: &UserTurn) -> String {
+pub fn render_user_block(ut: &UserTurn, card_id: &str) -> String {
     let body =
         if ut.message.trim().is_empty() { String::new() } else { markdown::render(&ut.message) };
-    let images_html: String =
-        ut.images.iter().map(tools::render_image).collect::<Vec<_>>().join("\n");
+    let images_html = if ut.images.is_empty() {
+        String::new()
+    } else {
+        tools::render_images_thumbnail_row(&ut.images, card_id)
+    };
     format!(r#"<div class="user-block">{body}{images_html}</div>"#)
 }
 
@@ -65,7 +69,7 @@ mod tests {
             timestamp: ts(),
             images: vec![],
         };
-        let html = render_user_block(&ut);
+        let html = render_user_block(&ut, "test-card");
         assert!(html.contains(r#"class="user-block""#), "must have user-block class");
         assert!(html.contains("Hello, Claude!"), "message text must appear");
     }
@@ -77,7 +81,7 @@ mod tests {
             timestamp: ts(),
             images: vec![],
         };
-        let html = render_user_block(&ut);
+        let html = render_user_block(&ut, "test-card");
         assert!(!html.contains("dot--"), "user block must not have a dot");
         assert!(!html.contains("timeline-row"), "user block is not a dot-row");
     }
@@ -89,7 +93,7 @@ mod tests {
             timestamp: ts(),
             images: vec![],
         };
-        let html = render_user_block(&ut);
+        let html = render_user_block(&ut, "test-card");
         assert!(html.contains(r#"class="user-block""#));
         // Empty body → no paragraph tag.
         assert!(!html.contains("<p>"), "whitespace-only message should not produce a paragraph");
@@ -108,6 +112,40 @@ mod tests {
     fn assistant_text_row_renders_markdown() {
         let html = render_assistant_text_row("**bold** text", &[]);
         assert!(html.contains("<strong>"), "markdown should be rendered to HTML");
+    }
+
+    // T23 — user-attached images use thumbnail row + modal ----------------
+
+    #[test]
+    fn user_block_images_use_thumbnail_row_with_modal() {
+        let ut = UserTurn {
+            message: "see attached".to_string(),
+            timestamp: ts(),
+            images: vec![crate::model::content::ImageSource {
+                source_type: "base64".to_string(),
+                media_type: "image/png".to_string(),
+                data: "abc123".to_string(),
+            }],
+        };
+        let html = render_user_block(&ut, "msg-7");
+        // Must use thumbnail container (horizontal strip), not plain <img>.
+        assert!(html.contains("img-thumbnails"), "must use thumbnail container");
+        assert!(html.contains("img-thumb-btn"), "must use thumbnail buttons");
+        assert!(html.contains("data-modal="), "thumbnails must trigger modal");
+        assert!(html.contains("<template"), "must include modal template");
+        // Full-size modal image must be present.
+        assert!(html.contains("img-modal-full"), "modal must have full-size image");
+    }
+
+    #[test]
+    fn user_block_no_images_has_no_thumbnail_container() {
+        let ut = UserTurn {
+            message: "no image".to_string(),
+            timestamp: ts(),
+            images: vec![],
+        };
+        let html = render_user_block(&ut, "msg-8");
+        assert!(!html.contains("img-thumbnails"), "no thumbnail container without images");
     }
 
     #[test]

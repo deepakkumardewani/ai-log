@@ -254,9 +254,20 @@ pub fn flatten_to_timeline(session: &Session) -> Vec<TimelineEvent> {
     let mut tool_call_index: HashMap<String, usize> = HashMap::new();
 
     for node in &ordered {
+        // Skip sidechain messages (sub-agent internal turns).
+        if node.is_sidechain {
+            continue;
+        }
         match &node.entry {
+            TranscriptEntry::User(ue) if ue.common.is_meta => {
+                // Skip Claude Code meta/injected context messages.
+            }
             TranscriptEntry::User(ue) if has_text_content(&ue.message) => {
                 let text = extract_text_content(&ue.message);
+                // Skip known meta text patterns even without the isMeta flag.
+                if is_meta_text(&text) {
+                    continue;
+                }
                 let images = extract_images(&ue.message);
                 events.push(TimelineEvent::UserMessage(UserTurn {
                     message: text,
@@ -588,6 +599,40 @@ fn extract_agent_result_text(result: &str) -> String {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Returns `true` for known Claude Code meta message text patterns that should
+/// be hidden from the timeline even when `isMeta` is absent.
+///
+/// Patterns:
+/// - "Caveat: … local commands" injected context blocks
+/// - "/model …" and other slash-command echoes (plain text starting with `/`)
+/// - `<command-name>…</command-name>` XML-wrapped slash commands
+/// - `<local-command-stdout>…</local-command-stdout>` local command output
+/// - "Set model to …" acknowledgements (plain or XML-wrapped)
+fn is_meta_text(text: &str) -> bool {
+    let trimmed = text.trim();
+    // Plain slash-command echoes: "/model gpt-4", "/help", etc.
+    if trimmed.starts_with('/') {
+        return true;
+    }
+    // Plain "Set model to …" acknowledgements.
+    if trimmed.starts_with("Set model to ") {
+        return true;
+    }
+    // "Caveat: … local commands" injected blocks.
+    if trimmed.starts_with("Caveat:") && trimmed.contains("local commands") {
+        return true;
+    }
+    // XML-wrapped slash-command echoes: `<command-name>/model</command-name> …`
+    if trimmed.contains("<command-name>") {
+        return true;
+    }
+    // Local command stdout wrapper: `<local-command-stdout>…</local-command-stdout>`
+    if trimmed.contains("<local-command-stdout>") {
+        return true;
+    }
+    false
+}
 
 fn has_text_content(msg: &crate::model::content::Message) -> bool {
     msg.content.iter().any(|c| match c {
@@ -1019,6 +1064,175 @@ mod tests {
             assert_eq!(at.total_in, 18);
             assert_eq!(at.total_out, 9);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // T19 tests — meta-message filtering
+    // -----------------------------------------------------------------------
+
+    /// Helper: build a minimal JSONL user message line with optional isMeta flag.
+    fn user_line(uuid: &str, parent: Option<&str>, text: &str, is_meta: bool) -> String {
+        let parent_field = match parent {
+            Some(p) => format!(r#","parentUuid":"{}""#, p),
+            None => String::new(),
+        };
+        let meta_field = if is_meta { r#","isMeta":true"# } else { "" };
+        format!(
+            r#"{{"type":"user","uuid":"{uuid}","sessionId":"s1","timestamp":"2025-01-01T00:00:00Z"{parent_field}{meta_field},"message":{{"role":"user","content":[{{"type":"text","text":{text_json}}}]}}}}"#,
+            uuid = uuid,
+            parent_field = parent_field,
+            meta_field = meta_field,
+            text_json = serde_json::to_string(text).unwrap(),
+        )
+    }
+
+    fn assistant_line(uuid: &str, parent: &str, text: &str) -> String {
+        format!(
+            r#"{{"type":"assistant","uuid":"{uuid}","parentUuid":"{parent}","sessionId":"s1","timestamp":"2025-01-01T00:01:00Z","message":{{"role":"assistant","content":[{{"type":"text","text":{text_json}}}]}}}}"#,
+            uuid = uuid,
+            parent = parent,
+            text_json = serde_json::to_string(text).unwrap(),
+        )
+    }
+
+    #[test]
+    fn meta_flag_drops_user_message() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000001";
+        let a1 = "550e8400-e29b-41d4-a716-000000000002";
+        let u2 = "550e8400-e29b-41d4-a716-000000000003";
+        let a2 = "550e8400-e29b-41d4-a716-000000000004";
+        // First pair: isMeta user + real assistant
+        // Second pair: real user + real assistant
+        let jsonl = format!(
+            "{}\n{}\n{}\n{}",
+            user_line(u1, None, "Invoke the skill.", true),
+            assistant_line(a1, u1, "Sure, here is the result."),
+            user_line(u2, Some(a1), "What is the capital of France?", false),
+            assistant_line(a2, u2, "Paris."),
+        );
+        let events = parse_and_flatten(&jsonl);
+        // The isMeta user message must be dropped; the real prompt must survive.
+        let user_texts: Vec<&str> = events
+            .iter()
+            .filter_map(|e| {
+                if let TimelineEvent::UserMessage(ut) = e {
+                    Some(ut.message.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            user_texts,
+            vec!["What is the capital of France?"],
+            "isMeta user must be dropped"
+        );
+    }
+
+    #[test]
+    fn slash_command_echo_dropped() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000011";
+        let a1 = "550e8400-e29b-41d4-a716-000000000012";
+        let u2 = "550e8400-e29b-41d4-a716-000000000013";
+        let a2 = "550e8400-e29b-41d4-a716-000000000014";
+        let jsonl = format!(
+            "{}\n{}\n{}\n{}",
+            user_line(u1, None, "/model claude-opus-4-8", false),
+            assistant_line(a1, u1, "Set model to claude-opus-4-8"),
+            user_line(u2, Some(a1), "Hello, what can you do?", false),
+            assistant_line(a2, u2, "I can help with many things."),
+        );
+        let events = parse_and_flatten(&jsonl);
+        let user_texts: Vec<&str> = events
+            .iter()
+            .filter_map(|e| {
+                if let TimelineEvent::UserMessage(ut) = e {
+                    Some(ut.message.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            user_texts,
+            vec!["Hello, what can you do?"],
+            "/model slash-command echo must be dropped"
+        );
+    }
+
+    #[test]
+    fn caveat_local_commands_dropped() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000021";
+        let a1 = "550e8400-e29b-41d4-a716-000000000022";
+        let u2 = "550e8400-e29b-41d4-a716-000000000023";
+        let a2 = "550e8400-e29b-41d4-a716-000000000024";
+        let caveat =
+            "Caveat: the following are local commands that may be available in this context.";
+        let jsonl = format!(
+            "{}\n{}\n{}\n{}",
+            user_line(u1, None, caveat, false),
+            assistant_line(a1, u1, "Understood."),
+            user_line(u2, Some(a1), "Run tests please.", false),
+            assistant_line(a2, u2, "Running tests."),
+        );
+        let events = parse_and_flatten(&jsonl);
+        let user_texts: Vec<&str> = events
+            .iter()
+            .filter_map(|e| {
+                if let TimelineEvent::UserMessage(ut) = e {
+                    Some(ut.message.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(
+            user_texts,
+            vec!["Run tests please."],
+            "Caveat/local-commands block must be dropped"
+        );
+    }
+
+    #[test]
+    fn set_model_text_dropped() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000031";
+        // Stand-alone "Set model to …" as a user message (some transcripts have it this way)
+        let jsonl = user_line(u1, None, "Set model to claude-sonnet-4-6", false);
+        let events = parse_and_flatten(&jsonl);
+        assert!(events.is_empty(), "\"Set model to …\" user message must be filtered out");
+    }
+
+    #[test]
+    fn xml_command_name_dropped() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000051";
+        let text = "<command-name>/model</command-name>\n<command-message>model</command-message>\n<command-args>opus</command-args>";
+        let jsonl = user_line(u1, None, text, false);
+        let events = parse_and_flatten(&jsonl);
+        assert!(events.is_empty(), "XML-wrapped slash command must be filtered out");
+    }
+
+    #[test]
+    fn xml_local_command_stdout_dropped() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000061";
+        let text = "<local-command-stdout>Set model to claude-opus-4-7</local-command-stdout>";
+        let jsonl = user_line(u1, None, text, false);
+        let events = parse_and_flatten(&jsonl);
+        assert!(events.is_empty(), "local-command-stdout wrapper must be filtered out");
+    }
+
+    #[test]
+    fn real_prompt_survives_filtering() {
+        let u1 = "550e8400-e29b-41d4-a716-000000000041";
+        let a1 = "550e8400-e29b-41d4-a716-000000000042";
+        let jsonl = format!(
+            "{}\n{}",
+            user_line(u1, None, "Explain how Rust lifetimes work.", false),
+            assistant_line(a1, u1, "Lifetimes ensure references are valid."),
+        );
+        let events = parse_and_flatten(&jsonl);
+        assert_eq!(events.len(), 2, "real user + assistant must both appear");
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::AssistantText { .. }));
     }
 
     #[test]

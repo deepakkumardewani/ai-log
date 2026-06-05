@@ -328,6 +328,14 @@ fn build_flat_timeline_cards(session: &Session) -> Vec<MessageCard> {
 
         match event {
             TimelineEvent::UserMessage(ut) => {
+                // Render first; skip if the result has no visible text and no images.
+                // Some messages contain only XML/HTML tags (e.g. <task-notification>)
+                // that comrak replaces entirely with <!-- raw HTML omitted -->, leaving
+                // a visually empty block.
+                let html = turn::render_user_block(ut, &anchor);
+                if ut.images.is_empty() && !rendered_has_visible_text(&html) {
+                    continue;
+                }
                 let snippet = if ut.message.is_empty() {
                     None
                 } else {
@@ -335,7 +343,7 @@ fn build_flat_timeline_cards(session: &Session) -> Vec<MessageCard> {
                 };
                 cards.push(MessageCard {
                     kind_class: "timeline-user".to_string(),
-                    html: turn::render_user_block(ut),
+                    html,
                     anchor,
                     snippet,
                     filter_role: "user".to_string(),
@@ -400,6 +408,24 @@ fn build_flat_timeline_cards(session: &Session) -> Vec<MessageCard> {
     }
 
     cards
+}
+
+/// Returns `true` if `html` contains any non-whitespace text outside of HTML
+/// tags and comments. Used to detect user blocks that rendered to nothing
+/// (e.g. when comrak replaces an entire XML block with `<!-- raw HTML omitted -->`).
+fn rendered_has_visible_text(html: &str) -> bool {
+    // Strip the known comrak omission comment first so it doesn't count as text.
+    let stripped = html.replace("<!-- raw HTML omitted -->", "");
+    let mut in_tag = false;
+    for ch in stripped.chars() {
+        match ch {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            c if !in_tag && !c.is_whitespace() => return true,
+            _ => {}
+        }
+    }
+    false
 }
 
 /// Collapse whitespace and truncate to `max_chars` graphemes-ish (chars).
@@ -735,11 +761,14 @@ pub fn stub_context() -> TranscriptContext {
     let cards = vec![
         MessageCard {
             kind_class: "timeline-user".into(),
-            html: turn::render_user_block(&UserTurn {
-                message: "use the /build command to compile".to_string(),
-                timestamp: ts,
-                images: vec![],
-            }),
+            html: turn::render_user_block(
+                &UserTurn {
+                    message: "use the /build command to compile".to_string(),
+                    timestamp: ts,
+                    images: vec![],
+                },
+                "msg-1",
+            ),
             anchor: "msg-1".into(),
             snippet: Some("use the /build command to compile".into()),
             filter_role: "user".into(),
@@ -959,6 +988,7 @@ mod tests {
                 timestamp: ts,
                 session_id: "test-session".to_string(),
                 is_sidechain: false,
+                is_meta: false,
                 agent_id: None,
                 cwd: None,
                 git_branch: None,
@@ -1005,6 +1035,7 @@ mod tests {
                 timestamp: ts,
                 session_id: "test-session".to_string(),
                 is_sidechain: false,
+                is_meta: false,
                 agent_id: None,
                 cwd: None,
                 git_branch: None,

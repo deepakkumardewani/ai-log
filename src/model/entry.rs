@@ -32,6 +32,9 @@ pub struct CommonFields {
     /// Whether this is a sub-agent sidechain message.
     #[serde(default)]
     pub is_sidechain: bool,
+    /// Whether this is a Claude Code meta/internal message (injected context, skill invocations, etc.).
+    #[serde(default)]
+    pub is_meta: bool,
     /// The agent / model identifier.
     #[serde(default)]
     pub agent_id: Option<String>,

@@ -44,7 +44,14 @@ pub fn build_context(
     let message_count: u32 = sessions.iter().map(|s| s.message_count).sum();
     let total_tokens: u64 = sessions.iter().map(|s| s.total_tokens).sum();
 
-    let session_cards: Vec<SessionCard> = sessions
+    let mut sorted_sessions = sessions;
+    // Newest first: ISO timestamps sort lexicographically, so reverse order works.
+    // Sessions with no timestamp fall to the end.
+    sorted_sessions.sort_by(|a, b| {
+        b.started_at.as_deref().unwrap_or("").cmp(a.started_at.as_deref().unwrap_or(""))
+    });
+
+    let session_cards: Vec<SessionCard> = sorted_sessions
         .into_iter()
         .map(|s| {
             let relative_time = s
@@ -162,6 +169,46 @@ mod tests {
         );
         assert!(!html.contains("http://"));
         assert!(!html.contains("https://"));
+    }
+
+    #[test]
+    fn sessions_sorted_newest_first() {
+        let css = String::new();
+        let ctx = build_context(
+            css,
+            "proj".into(),
+            "proj".into(),
+            vec![
+                super::super::ProjectSessionData {
+                    id: "old-sess".into(),
+                    title: None,
+                    message_count: 1,
+                    total_tokens: 0,
+                    first_user_prompt: None,
+                    started_at: Some("2025-01-01T00:00:00Z".into()),
+                },
+                super::super::ProjectSessionData {
+                    id: "new-sess".into(),
+                    title: None,
+                    message_count: 1,
+                    total_tokens: 0,
+                    first_user_prompt: None,
+                    started_at: Some("2025-06-01T00:00:00Z".into()),
+                },
+                super::super::ProjectSessionData {
+                    id: "no-ts-sess".into(),
+                    title: None,
+                    message_count: 1,
+                    total_tokens: 0,
+                    first_user_prompt: None,
+                    started_at: None,
+                },
+            ],
+        );
+        let ids: Vec<&str> = ctx.sessions.iter().map(|s| s.id.as_str()).collect();
+        assert_eq!(ids[0], "new-sess", "newest session must be first");
+        assert_eq!(ids[1], "old-sess", "older session must be second");
+        assert_eq!(ids[2], "no-ts-sess", "session with no timestamp must be last");
     }
 
     #[test]

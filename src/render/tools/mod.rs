@@ -602,6 +602,13 @@ fn html_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
+/// Return the last path component (basename) of a file path.
+///
+/// Works with both `/unix/style` and `\windows\style` separators.
+fn basename(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().filter(|s| !s.is_empty()).unwrap_or(path)
+}
+
 // ---------------------------------------------------------------------------
 // v3 event renderers — T5: Thinking row
 // ---------------------------------------------------------------------------
@@ -665,8 +672,10 @@ fn render_tool_details_row(dot_class: &str, label: &str, body: &str) -> String {
 /// Only call when content is non-empty; callers gate on data presence.
 fn render_tool_section(label: &str, content: &str, is_error: bool) -> String {
     let error_class = if is_error { " tool-section--error" } else { "" };
+    // Wrap in .tool-section-pre-wrap so JS can detect overflow and add .is-clamped
+    // for the fade + click-to-modal affordance (T20).
     format!(
-        r#"<div class="tool-section{error_class}"><div class="tool-section-label">{label}</div><pre class="tool-section-body">{}</pre></div>"#,
+        r#"<div class="tool-section{error_class}"><div class="tool-section-label">{label}</div><div class="tool-section-pre-wrap"><pre class="tool-section-body">{}</pre></div></div>"#,
         html_escape(content)
     )
 }
@@ -681,19 +690,20 @@ fn render_bash_event(
     } else {
         ""
     };
+    // Escape text portions first, then insert the badge HTML so it renders correctly.
     let label = if !desc.is_empty() {
-        format!("Bash — {desc}{bg_badge}")
+        format!("<strong>Bash</strong> — {}{bg_badge}", html_escape(desc))
     } else {
         let preview: String = b.command.chars().take(60).collect();
         let ellipsis = if b.command.chars().count() > 60 { "…" } else { "" };
-        format!("Bash{bg_badge} — {preview}{ellipsis}")
+        format!("<strong>Bash</strong>{bg_badge} — {}{ellipsis}", html_escape(&preview))
     };
 
     let in_section = render_tool_section("IN", &b.command, false);
     let out_section =
         result.map(|r| render_tool_section("OUT", &r.content, r.is_error)).unwrap_or_default();
 
-    render_tool_details_row(DOT_TOOL, &html_escape(&label), &format!("{in_section}{out_section}"))
+    render_tool_details_row(DOT_TOOL, &label, &format!("{in_section}{out_section}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -710,7 +720,8 @@ fn render_read_event(
         (Some(off), None) => format!(":{}", off),
         _ => String::new(),
     };
-    let file_escaped = html_escape(&r.file_path);
+    let full_path_escaped = html_escape(&r.file_path);
+    let base_escaped = html_escape(basename(&r.file_path));
     let meta_html = if line_range.is_empty() {
         String::new()
     } else {
@@ -718,19 +729,20 @@ fn render_read_event(
     };
 
     if let Some(res) = result {
-        // Has result: filename opens modal with file contents.
+        // Has result: basename opens modal; full path in tooltip.
         let template_id = format!("read-{id}");
-        let contents_html =
-            format!(r#"<pre class="file-contents">{}</pre>"#, html_escape(&res.content));
+        let contents_html = render_file_modal_body(&r.file_path, &res.content);
         let label = format!(
-            r#"Read — <button type="button" class="file-link" data-modal="{template_id}">{file_escaped}</button>{meta_html}"#
+            r#"<strong>Read</strong> — <button type="button" class="file-link" data-modal="{template_id}" data-tooltip="{full_path_escaped}">{base_escaped}</button>{meta_html}"#
         );
         format!(
             r#"<div class="timeline-row"><div class="dot {DOT_TOOL}"></div><span class="row-label">{label}</span></div><template id="{template_id}">{contents_html}</template>"#
         )
     } else {
-        // No result: plain row, filename is not a link.
-        let label = format!("Read — {file_escaped}{meta_html}");
+        // No result: plain row, basename shown, full path in tooltip.
+        let label = format!(
+            r#"<strong>Read</strong> — <span data-tooltip="{full_path_escaped}">{base_escaped}</span>{meta_html}"#
+        );
         format!(
             r#"<div class="timeline-row"><div class="dot {DOT_TOOL}"></div><span class="row-label">{label}</span></div>"#
         )
@@ -741,14 +753,16 @@ fn render_write_event(w: &crate::model::tool::WriteInput) -> String {
     let diff = crate::render::diff::render_unified_diff("", &w.content);
     let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
     let body = format!("{summary}{}", diff.html);
-    render_tool_details_row(DOT_TOOL, &format!("Write — {}", html_escape(&w.file_path)), &body)
+    let label = file_tool_label("Write", &w.file_path);
+    render_tool_details_row(DOT_TOOL, &label, &body)
 }
 
 fn render_edit_event(e: &crate::model::tool::EditInput) -> String {
     let diff = crate::render::diff::render_unified_diff(&e.old_string, &e.new_string);
     let summary = crate::render::diff::render_change_summary(diff.added, diff.removed);
     let body = format!("{summary}{}", diff.html);
-    render_tool_details_row(DOT_TOOL, &format!("Edit — {}", html_escape(&e.file_path)), &body)
+    let label = file_tool_label("Edit", &e.file_path);
+    render_tool_details_row(DOT_TOOL, &label, &body)
 }
 
 fn render_multiedit_event(me: &crate::model::tool::MultiEditInput) -> String {
@@ -761,8 +775,104 @@ fn render_multiedit_event(me: &crate::model::tool::MultiEditInput) -> String {
             format!(r#"<div class="multiedit-op">{s}{}</div>"#, d.html)
         })
         .collect();
-    let label = format!("MultiEdit — {} ({} edits)", html_escape(&me.file_path), me.edits.len());
+    let label =
+        format!("{} ({} edits)", file_tool_label("MultiEdit", &me.file_path), me.edits.len());
     render_tool_details_row(DOT_TOOL, &label, &diffs.join(""))
+}
+
+/// Build a `Tool — <basename>` label with the full path in a `data-tooltip`.
+fn file_tool_label(tool: &str, file_path: &str) -> String {
+    let full = html_escape(file_path);
+    let base = html_escape(basename(file_path));
+    format!(r#"<strong>{tool}</strong> — <span data-tooltip="{full}">{base}</span>"#)
+}
+
+/// Render the modal body for a Read tool result.
+///
+/// Markdown files are rendered via comrak after stripping line numbers;
+/// all other files get a `<pre>` block (line numbers preserved).
+fn render_file_modal_body(file_path: &str, content: &str) -> String {
+    if is_markdown_path(file_path) {
+        crate::render::markdown::render(&strip_line_numbers(content))
+    } else {
+        format!(r#"<pre class="file-contents">{}</pre>"#, html_escape(content))
+    }
+}
+
+/// Return `true` when the file extension indicates a Markdown document.
+fn is_markdown_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
+
+/// Strip `cat -n` style line-number prefixes (`   N\t`) from each line.
+///
+/// The Claude Code Read tool returns content with leading whitespace-padded
+/// line numbers followed by a tab. Stripping these before markdown rendering
+/// restores proper heading/list/fence recognition.
+fn strip_line_numbers(content: &str) -> String {
+    content
+        .lines()
+        .map(|line| {
+            // Trim leading spaces, check for digits + tab pattern.
+            let s = line.trim_start_matches(' ');
+            let digit_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(0);
+            if digit_end > 0 && s.as_bytes().get(digit_end) == Some(&b'\t') {
+                s[digit_end + 1..].to_string()
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Try to load a skill's SKILL.md (or command .md) from the filesystem.
+///
+/// Search order:
+///   1. `~/.claude/plugins/marketplaces/*/skills/{short_name}/SKILL.md`
+///   2. `~/.claude/plugins/marketplaces/*/.claude/commands/{short_name}.md`
+///   3. `~/.agents/skills/{name}/SKILL.md`
+///   4. `~/.claude/skills/{name}/SKILL.md`
+fn try_load_skill_file(skill_name: &str) -> Option<String> {
+    let home = std::env::var("HOME").ok()?;
+    let short = skill_name.split(':').last().unwrap_or(skill_name);
+
+    // 1 + 2: marketplace plugins
+    let mp_base = format!("{home}/.claude/plugins/marketplaces");
+    if let Ok(entries) = std::fs::read_dir(&mp_base) {
+        for entry in entries.flatten() {
+            let base = entry.path();
+            // SKILL.md inside skills/{short}/
+            let skill_path = base.join("skills").join(short).join("SKILL.md");
+            if let Ok(c) = std::fs::read_to_string(&skill_path) {
+                return Some(c);
+            }
+            // command .md
+            let cmd_path = base.join(".claude").join("commands").join(format!("{short}.md"));
+            if let Ok(c) = std::fs::read_to_string(&cmd_path) {
+                return Some(c);
+            }
+        }
+    }
+
+    // 3: ~/.agents/skills
+    for name in &[short, skill_name] {
+        let p = format!("{home}/.agents/skills/{name}/SKILL.md");
+        if let Ok(c) = std::fs::read_to_string(&p) {
+            return Some(c);
+        }
+    }
+
+    // 4: ~/.claude/skills
+    for name in &[short, skill_name] {
+        let p = format!("{home}/.claude/skills/{name}/SKILL.md");
+        if let Ok(c) = std::fs::read_to_string(&p) {
+            return Some(c);
+        }
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -775,12 +885,21 @@ fn render_skill_event(
     id: &str,
 ) -> String {
     let skill_name = if s.skill.is_empty() { "Skill".to_string() } else { html_escape(&s.skill) };
-    let row_label = format!("{skill_name} skill");
+    let row_label = format!("<strong>{skill_name}</strong> skill");
 
-    if let Some(res) = result {
+    // The Skill tool result is always a short "Launching skill: ..." confirmation —
+    // the actual SKILL.md content is injected into the model context separately.
+    // Try to load the real content from disk so the modal shows something useful.
+    let disk_content = try_load_skill_file(&s.skill);
+    let has_modal = result.is_some() || disk_content.is_some();
+
+    if has_modal {
         let template_id = format!("skill-{id}");
-        let body_html =
-            format!(r#"<div class="skill-body"><pre>{}</pre></div>"#, html_escape(&res.content));
+        let md_source = disk_content
+            .as_deref()
+            .unwrap_or_else(|| result.map(|r| r.content.as_str()).unwrap_or(""));
+        let rendered_md = crate::render::markdown::render(md_source);
+        let body_html = format!(r#"<div class="skill-body markdown-body">{rendered_md}</div>"#);
         format!(
             r#"<div class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label"><button type="button" class="skill-link" data-modal="{template_id}">{row_label}</button></span></div><template id="{template_id}">{body_html}</template>"#
         )
@@ -796,7 +915,7 @@ fn render_generic_tool_event(
     input: &serde_json::Value,
     result: Option<&crate::conversation::ToolResult>,
 ) -> String {
-    let label = html_escape(name);
+    let label = format!("<strong>{}</strong>", html_escape(name));
     let in_rows: Vec<String> = input
         .as_object()
         .map(|obj| {
@@ -1210,17 +1329,18 @@ mod tests {
 
     #[test]
     fn skill_event_with_result_shows_full_name_and_modal() {
+        // Use a skill name that won't resolve to a real file on disk.
         let tce = crate::conversation::ToolCallEvent {
             id: "s1".to_string(),
             name: "Skill".to_string(),
-            input: serde_json::json!({"skill": "agent-skills:interview-me", "args": ""}),
+            input: serde_json::json!({"skill": "test-fake-skill-zzz:nonexistent", "args": ""}),
             result: Some(crate::conversation::ToolResult {
                 content: "Skill output here".to_string(),
                 is_error: false,
             }),
         };
         let html = render_tool_call_event(&tce);
-        assert!(html.contains("agent-skills:interview-me"), "full skill name must appear");
+        assert!(html.contains("test-fake-skill-zzz:nonexistent"), "full skill name must appear");
         assert!(html.contains("skill"), "row must say 'skill'");
         assert!(html.contains("dot--assistant"), "skill uses gray dot");
         assert!(html.contains("skill-link"), "skill name must be a link");
@@ -1230,16 +1350,17 @@ mod tests {
     }
 
     #[test]
-    fn skill_event_without_result_shows_name_no_link() {
+    fn skill_event_without_result_and_no_disk_file_shows_name_no_link() {
+        // Use a skill name that cannot resolve to a real file on disk.
         let tce = crate::conversation::ToolCallEvent {
             id: "s2".to_string(),
             name: "Skill".to_string(),
-            input: serde_json::json!({"skill": "frontend-design", "args": null}),
+            input: serde_json::json!({"skill": "test-fake-skill-zzz:nonexistent", "args": null}),
             result: None,
         };
         let html = render_tool_call_event(&tce);
-        assert!(html.contains("frontend-design"), "full skill name must appear");
-        assert!(!html.contains("skill-link"), "no link when result is absent");
+        assert!(html.contains("test-fake-skill-zzz:nonexistent"), "full skill name must appear");
+        assert!(!html.contains("skill-link"), "no link when no result and no disk file");
         assert!(html.contains("dot--assistant"), "skill uses gray dot");
     }
 
@@ -1259,7 +1380,186 @@ mod tests {
         assert!(html.contains("diff-line--add"), "must have add diff line");
         assert!(html.contains("diff-line--del"), "must have del diff line");
         assert!(html.contains("diff-count--add"), "must have summary add class");
-        assert!(html.contains("Edit — src/a.rs"), "file header must show");
+        // T18: event row shows basename with full path in tooltip.
+        assert!(html.contains("data-tooltip=\"src/a.rs\""), "full path must appear in tooltip");
+        assert!(html.contains(">a.rs<"), "basename must appear as visible text");
+    }
+
+    // -----------------------------------------------------------------------
+    // T18 — File-name basename + tooltip
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn basename_helper_returns_last_segment() {
+        assert_eq!(basename("src/render/tools/mod.rs"), "mod.rs");
+        assert_eq!(basename("mod.rs"), "mod.rs");
+        assert_eq!(basename("/abs/path/file.txt"), "file.txt");
+        assert_eq!(basename("dir\\windows\\file.rs"), "file.rs");
+        assert_eq!(basename(""), "");
+    }
+
+    #[test]
+    fn read_event_shows_basename_with_full_path_tooltip() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "r10".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "src/render/html.rs"}),
+            result: Some(crate::conversation::ToolResult {
+                content: "// html module".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("data-tooltip=\"src/render/html.rs\""), "full path in tooltip");
+        assert!(html.contains(">html.rs<") || html.contains("html.rs\""), "basename visible");
+        assert!(!html.contains(">src/render/html.rs<"), "full path not as visible text");
+    }
+
+    #[test]
+    fn read_event_no_result_shows_basename_with_tooltip() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "r11".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "src/lib.rs"}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("data-tooltip=\"src/lib.rs\""), "full path in tooltip");
+        assert!(html.contains(">lib.rs<"), "basename in visible text");
+    }
+
+    #[test]
+    fn write_event_shows_basename_with_tooltip() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "w10".to_string(),
+            name: "Write".to_string(),
+            input: serde_json::json!({"file_path": "src/main.rs", "content": "fn main() {}"}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("data-tooltip=\"src/main.rs\""), "full path in tooltip");
+        assert!(html.contains(">main.rs<"), "basename visible");
+    }
+
+    #[test]
+    fn multiedit_event_shows_basename_with_tooltip() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "me10".to_string(),
+            name: "MultiEdit".to_string(),
+            input: serde_json::json!({"file_path": "src/render/mod.rs", "edits": [{"old_string": "a", "new_string": "b", "replace_all": false}]}),
+            result: None,
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("data-tooltip=\"src/render/mod.rs\""), "full path in tooltip");
+        assert!(html.contains(">mod.rs<"), "basename visible");
+    }
+
+    // -----------------------------------------------------------------------
+    // T20 — IN/OUT clamp: pre-wrap div present
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_section_wraps_pre_in_pre_wrap() {
+        let html = render_tool_section("IN", "some content", false);
+        assert!(html.contains("tool-section-pre-wrap"), "must have pre-wrap container");
+        assert!(html.contains("<pre class=\"tool-section-body\">"), "pre inside wrap");
+    }
+
+    #[test]
+    fn tool_section_error_wraps_pre_in_pre_wrap() {
+        let html = render_tool_section("OUT", "error output", true);
+        assert!(html.contains("tool-section--error"), "error class on outer div");
+        assert!(html.contains("tool-section-pre-wrap"), "pre-wrap present even for errors");
+    }
+
+    // -----------------------------------------------------------------------
+    // T21 — Modal markdown via comrak
+    // -----------------------------------------------------------------------
+
+    // -----------------------------------------------------------------------
+    // T24 — Skill body ONLY in modal template, no inline dump
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn skill_event_body_only_in_template_not_inline() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "sk99".to_string(),
+            name: "Skill".to_string(),
+            input: serde_json::json!({"skill": "test-fake-skill-zzz:nonexistent", "args": ""}),
+            result: Some(crate::conversation::ToolResult {
+                content: "## Build Skill body content here".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        // Row must show skill name button (gray dot).
+        assert!(html.contains("test-fake-skill-zzz:nonexistent"), "row must show skill name");
+        assert!(html.contains("skill"), "row must contain 'skill' label");
+        assert!(html.contains("dot--assistant"), "skill uses gray dot");
+        assert!(html.contains("skill-link"), "row must have modal trigger");
+        // Body must be inside <template>, not floating outside.
+        let template_start = html.find("<template").expect("template must be present");
+        let template_end = html.find("</template>").expect("</template> must be present");
+        // Content before <template> must not contain the body text.
+        let before_template = &html[..template_start];
+        assert!(
+            !before_template.contains("Build Skill body"),
+            "body must not appear before <template>"
+        );
+        // Content inside template must contain the body.
+        let inside_template = &html[template_start..template_end];
+        assert!(inside_template.contains("Build Skill body"), "body must be inside <template>");
+    }
+
+    #[test]
+    fn skill_event_body_is_markdown_not_escaped() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "sk10".to_string(),
+            name: "Skill".to_string(),
+            input: serde_json::json!({"skill": "test-fake-skill-zzz:nonexistent", "args": ""}),
+            result: Some(crate::conversation::ToolResult {
+                content: "# Plan\n\n- step one\n- step two\n".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        // Markdown rendered: headings and list items produce HTML tags.
+        assert!(html.contains("<h1>") || html.contains("<h1 "), "heading rendered as <h1>");
+        assert!(html.contains("<li>"), "list items rendered as <li>");
+        // Raw markdown not escaped as literal text.
+        assert!(!html.contains("# Plan"), "raw MD heading must not appear literally");
+    }
+
+    #[test]
+    fn read_event_md_file_body_is_markdown_rendered() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "rm10".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "README.md"}),
+            result: Some(crate::conversation::ToolResult {
+                content: "# Hello\n\nWorld paragraph.\n".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("<h1>") || html.contains("<h1 "), "markdown file rendered as HTML");
+        assert!(!html.contains("# Hello"), "raw heading must not appear literally");
+    }
+
+    #[test]
+    fn read_event_code_file_body_stays_pre() {
+        let tce = crate::conversation::ToolCallEvent {
+            id: "rc10".to_string(),
+            name: "Read".to_string(),
+            input: serde_json::json!({"file_path": "src/main.rs"}),
+            result: Some(crate::conversation::ToolResult {
+                content: "fn main() {}".to_string(),
+                is_error: false,
+            }),
+        };
+        let html = render_tool_call_event(&tce);
+        assert!(html.contains("<pre"), "code file stays in <pre>");
+        assert!(html.contains("fn main"), "code content preserved");
     }
 
     // -----------------------------------------------------------------------

@@ -83,6 +83,7 @@ mod tests {
                         .with_timezone(&Utc),
                     session_id: "test".to_string(),
                     is_sidechain: false,
+                    is_meta: false,
                     agent_id: None,
                     cwd: None,
                     git_branch: None,
