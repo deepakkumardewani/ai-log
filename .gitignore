@@ -19,7 +19,7 @@ Thumbs.db
 # Generated session HTML at repo root (CLI export output)
 # Test fixtures under tests/fixtures/ are tracked separately.
 /*.html
-tests/cclog-out/
+tests/*-out/
 tests/fixtures/cclog-cache.db
 
 # Editor / merge backups

@@ -181,7 +181,7 @@ pub fn build_context(
     TranscriptContext {
         css,
         transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
-        page_title: format!("{} — cclog", agg.session_id),
+        page_title: format!("{} — weavr", agg.session_id),
         session_title: agg.summaries.first().cloned().unwrap_or_else(|| agg.session_id.clone()),
         session_date,
         session_time,
@@ -234,7 +234,7 @@ pub fn build_context_paginated(
     TranscriptContext {
         css,
         transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
-        page_title: format!("{} (page {}/{}) — cclog", agg.session_id, page.number, page.total),
+        page_title: format!("{} (page {}/{}) — weavr", agg.session_id, page.number, page.total),
         session_title: agg.summaries.first().cloned().unwrap_or_else(|| agg.session_id.clone()),
         session_date,
         session_time,
@@ -414,16 +414,12 @@ fn filter_attrs(kind_class: &str) -> (String, String) {
     }
 }
 
-// These helpers are only used by the D1 tests (system/hook card format).
-// They will be re-wired in P3/T12 when standalone entry rendering is added
-// back to the flat timeline. The allow(dead_code) silences clippy in
-// non-test builds.
-#[allow(dead_code)]
+#[cfg(test)]
 fn format_ts(ts: &chrono::DateTime<chrono::Utc>) -> String {
     ts.with_timezone(&chrono::Local).format("%H:%M:%S").to_string()
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn render_system_entry(se: &crate::model::entry::SystemEntry) -> (String, String) {
     let ts = format_ts(&se.common.timestamp);
     let subtype = se.subtype.as_deref().unwrap_or("system");
@@ -486,7 +482,7 @@ fn render_system_entry(se: &crate::model::entry::SystemEntry) -> (String, String
     )
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn render_hook_attachment(he: &crate::model::entry::HookAttachmentEntry) -> (String, String) {
     let ts = format_ts(&he.common.timestamp);
     let att = he.attachment.as_ref();
@@ -558,12 +554,12 @@ fn render_hook_attachment(he: &crate::model::entry::HookAttachmentEntry) -> (Str
     )
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn html_escape_text(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-#[allow(dead_code)]
+#[cfg(test)]
 fn pretty_json(v: &serde_json::Value) -> String {
     html_escape_text(&serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()))
 }
@@ -744,7 +740,7 @@ pub fn stub_context() -> TranscriptContext {
     TranscriptContext {
         css: crate::assets::CSS.to_string(),
         transcript_js: crate::assets::TRANSCRIPT_JS.to_string(),
-        page_title: "Claude Code Session — cclog".to_string(),
+        page_title: "Claude Code Session — weavr".to_string(),
         session_title: "Implement Connect4 Rules Engine".to_string(),
         session_date: "Oct 24".to_string(),
         session_time: "10:30:00".to_string(),

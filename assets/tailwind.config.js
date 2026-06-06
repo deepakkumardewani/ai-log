@@ -1,4 +1,4 @@
-/** Tailwind CSS v4 configuration for cclog.
+/** Tailwind CSS v4 configuration for weavr.
  *  Warm neutral + terracotta/amber palette.
  *  Used by the standalone Tailwind CLI at build time.
  *  DO NOT reference external CDNs — output must be fully self-contained.

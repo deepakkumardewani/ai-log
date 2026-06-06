@@ -1,6 +1,6 @@
 use clap::Parser;
 
 fn main() -> anyhow::Result<()> {
-    let cli = cclog::cli::Cli::parse();
+    let cli = weavr::cli::Cli::parse();
     cli.run()
 }

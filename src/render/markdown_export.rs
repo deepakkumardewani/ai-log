@@ -527,7 +527,7 @@ mod tests {
         assert!(md.contains("Bash"));
         assert!(md.contains("cargo build"));
         // Tool results
-        assert!(md.contains("Compiling cclog"));
+        assert!(md.contains("Compiling weavr"));
     }
 
     #[test]

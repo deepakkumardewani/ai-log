@@ -1,4 +1,4 @@
-// cclog — Claude Code transcript exporter.
+// weavr — Claude Code transcript exporter.
 // Library crate: models, parser, renderer, cache.
 // See agent_docs/rust-spec-v0.1.md for architecture.
 
@@ -13,6 +13,7 @@ pub mod parser;
 pub mod project;
 pub mod render;
 pub mod session;
+pub mod update;
 
 #[cfg(test)]
 pub(crate) mod tests {
@@ -36,7 +37,7 @@ pub(crate) mod tests {
         format!(
             r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"test-session","message":{{"role":"user","content":[{{"type":"text","text":"Build the project"}}]}}}}
 {{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"test-session","agentId":"claude-opus-4-7","message":{{"role":"assistant","model":"claude-opus-4-7","stop_reason":"tool_use","usage":{{"input_tokens":100,"output_tokens":50}},"content":[{{"type":"text","text":"I will build the project."}},{{"type":"tool_use","id":"t1","name":"Bash","input":{{"command":"cargo build"}}}}]}}}}
-{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"test-session","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t1","content":"Compiling cclog...\nFinished","is_error":false}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"test-session","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t1","content":"Compiling weavr...\nFinished","is_error":false}}]}}}}
 {{"type":"assistant","uuid":"{a2}","parentUuid":"{u2}","timestamp":"2025-06-15T10:31:05Z","sessionId":"test-session","agentId":"claude-opus-4-7","message":{{"role":"assistant","model":"claude-opus-4-7","stop_reason":"end_turn","usage":{{"input_tokens":80,"output_tokens":40}},"content":[{{"type":"text","text":"Build completed successfully!"}}]}}}}
 "#
         )

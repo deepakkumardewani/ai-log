@@ -1,4 +1,4 @@
-/* cclog Design System — Warm neutral + terracotta/amber palette.
+/* weavr Design System — Warm neutral + terracotta/amber palette.
    See agent_docs/design.md for the full visual system. */
 
 /* ---- Dark theme (default) ---- */
@@ -2009,7 +2009,7 @@ body.modal-open { overflow: hidden; }
 /* ===================================================================
    T15 — Custom tooltip
    =================================================================== */
-.cclog-tooltip {
+.weavr-tooltip {
   position: fixed;
   z-index: 2000;
   max-width: 360px;
@@ -2026,4 +2026,4 @@ body.modal-open { overflow: hidden; }
   pointer-events: none;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
-.cclog-tooltip[hidden] { display: none; }
+.weavr-tooltip[hidden] { display: none; }

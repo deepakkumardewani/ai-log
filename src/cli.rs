@@ -10,9 +10,9 @@ use crate::cache::{Cache, CachedSessionMeta};
 use crate::render::markdown_export::DetailLevel;
 use crate::render::{IndexProjectData, ProjectSessionData};
 
-/// cclog — Claude Code transcript exporter.
+/// weavr — Claude Code transcript exporter.
 #[derive(Parser)]
-#[command(name = "cclog", version = "0.1.0-dev")]
+#[command(name = "weavr", version = "0.2.0")]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,
@@ -49,13 +49,10 @@ pub struct Cli {
     #[arg(long)]
     pub clear_output: bool,
 
-    /// Output directory (default: ./cclog-out/).
+    /// Output directory (default: ./weavr-out/).
     #[arg(long)]
     pub output_dir: Option<PathBuf>,
 
-    // ------------------------------------------------------------------
-    // Phase 6: CLI parity
-    // ------------------------------------------------------------------
     /// Filter sessions starting on or after this date.
     /// Accepts: today, yesterday, last week, last month, YYYY-MM-DD.
     #[arg(long, global = true)]
@@ -83,8 +80,8 @@ pub struct Cli {
 pub enum Command {
     /// Emit a stub transcript HTML file for design verification.
     Stub {
-        /// Output file path (default: cclog-stub.html in current dir).
-        #[arg(short, long, default_value = "cclog-stub.html")]
+        /// Output file path (default: weavr-stub.html in current dir).
+        #[arg(short, long, default_value = "weavr-stub.html")]
         output: String,
     },
 
@@ -113,6 +110,9 @@ pub enum Command {
         #[arg(long)]
         open_browser: bool,
     },
+
+    /// Update weavr to the latest version from GitHub Releases.
+    SelfUpdate,
 }
 
 /// Output format for the export command.
@@ -145,7 +145,13 @@ impl Cli {
                 .init();
         }
 
+        // Passive update notice (non-blocking, throttled).
+        crate::update::maybe_print_update_notice();
+
         match self.command {
+            Some(Command::SelfUpdate) => crate::update::self_update().map(|msg| {
+                println!("{msg}");
+            }),
             Some(Command::Stub { output }) => run_stub(&output),
             Some(Command::Export {
                 input,
@@ -189,7 +195,7 @@ impl Cli {
 }
 
 // ---------------------------------------------------------------------------
-// Single-session export (Phase 3–4)
+// Single-session export
 // ---------------------------------------------------------------------------
 
 fn run_stub(output: &str) -> anyhow::Result<()> {
@@ -338,7 +344,7 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
 }
 
 // ---------------------------------------------------------------------------
-// All-projects pipeline (Phase 5)
+// All-projects pipeline
 // ---------------------------------------------------------------------------
 
 fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
@@ -351,7 +357,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         );
     }
 
-    let output_dir = cli.output_dir.unwrap_or_else(|| PathBuf::from("cclog-out"));
+    let output_dir = cli.output_dir.unwrap_or_else(|| PathBuf::from("weavr-out"));
 
     if cli.clear_output && output_dir.exists() {
         fs::remove_dir_all(&output_dir)?;
@@ -359,7 +365,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
     fs::create_dir_all(&output_dir)?;
 
     // Cache.
-    let cache_path = projects_dir.join("cclog-cache.db");
+    let cache_path = projects_dir.join("weavr-cache.db");
     if cli.clear_cache && cache_path.exists() {
         let _ = fs::remove_file(&cache_path);
     }

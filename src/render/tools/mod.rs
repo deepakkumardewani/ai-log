@@ -5,6 +5,8 @@
 
 use crate::model::tool::ToolInput;
 
+use super::html_escape;
+
 // ---------------------------------------------------------------------------
 // v3 row primitives — dot class constants
 // ---------------------------------------------------------------------------
@@ -135,7 +137,7 @@ pub fn render_user_message(msg: &crate::model::content::Message) -> String {
 
 /// Render plain text for a user message (escaped, no markdown).
 pub fn render_user_message_text(text: &str) -> String {
-    let escaped = text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let escaped = html_escape(text);
     format!("<p>{}</p>", escaped.replace('\n', "<br>"))
 }
 
@@ -149,7 +151,7 @@ pub fn render_thinking(thinking: &str) -> String {
         format!("Thought for ~{}s", secs)
     };
     let snippet: String = thinking.chars().take(200).collect();
-    let escaped = snippet.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let escaped = html_escape(&snippet);
     let more = if thinking.len() > 200 { " …" } else { "" };
     format!(
         r#"<details class="thinking-block" open>
@@ -195,7 +197,7 @@ pub fn render_tool_use(name: &str, input: &serde_json::Value, _id: &str) -> Stri
 /// Render a tool_result block.
 pub fn render_tool_result(content: &str, is_error: bool) -> String {
     let error_class = if is_error { " tool-result--error" } else { "" };
-    let escaped = content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
+    let escaped = html_escape(content);
     format!(
         r#"<div class="tool-result{error_class}">
   <div class="tool-result-label">OUT:</div>
@@ -230,10 +232,7 @@ fn render_bash(b: &crate::model::tool::BashInput, _is_error: bool) -> String {
         &title,
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">IN:</span><span class="tool-io-value">{}</span></div>"#,
-            b.command.replace('&', "&amp;").replace('<', "&lt;")
-        ),
+        &tool_io_row("IN", &html_escape(&b.command)),
         false,
         "",
     )
@@ -247,14 +246,12 @@ fn render_read(r: &crate::model::tool::ReadInput) -> String {
     };
     let title = format!("Read — {}", r.file_path);
     let body = if meta.is_empty() {
-        format!(
-            r#"<div class="tool-io"><span class="tool-io-label">FILE:</span><span class="tool-io-value">{}</span></div>"#,
-            r.file_path
-        )
+        tool_io_row("FILE", &r.file_path)
     } else {
         format!(
-            r#"<div class="tool-io"><span class="tool-io-label">FILE:</span><span class="tool-io-value">{}</span></div><div class="tool-io-footer">{}</div>"#,
-            r.file_path, meta
+            r#"{}<div class="tool-io-footer">{}</div>"#,
+            tool_io_row("FILE", &r.file_path),
+            meta
         )
     };
     wrap_card(&title, "message-dot--tool", "message-card-header--tool", &body, false, "")
@@ -314,10 +311,7 @@ fn render_glob(g: &crate::model::tool::GlobInput) -> String {
         "Glob",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">PATTERN:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">PATH:</span><span class="tool-io-value">{}</span></div>"#,
-            g.pattern, path
-        ),
+        &format!("{}{}", tool_io_row("PATTERN", &g.pattern), tool_io_row("PATH", path)),
         false,
         "",
     )
@@ -331,8 +325,10 @@ fn render_grep(g: &crate::model::tool::GrepInput) -> String {
         "message-dot--tool",
         "message-card-header--tool",
         &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">PATTERN:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">PATH:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">INCLUDE:</span><span class="tool-io-value">{}</span></div>"#,
-            g.pattern, path, inc
+            "{}{}{}",
+            tool_io_row("PATTERN", &g.pattern),
+            tool_io_row("PATH", path),
+            tool_io_row("INCLUDE", inc)
         ),
         false,
         "",
@@ -411,10 +407,7 @@ fn render_web_search(ws: &crate::model::tool::WebSearchInput) -> String {
         "WebSearch",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">QUERY:</span><span class="tool-io-value">{}</span></div>"#,
-            ws.query
-        ),
+        &tool_io_row("QUERY", &ws.query),
         false,
         "",
     )
@@ -426,10 +419,7 @@ fn render_web_fetch(wf: &crate::model::tool::WebFetchInput) -> String {
         "WebFetch",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">URL:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">PROMPT:</span><span class="tool-io-value">{}</span></div>"#,
-            wf.url, prompt
-        ),
+        &format!("{}{}", tool_io_row("URL", &wf.url), tool_io_row("PROMPT", prompt)),
         false,
         "",
     )
@@ -442,8 +432,10 @@ fn render_schedule_wakeup(sw: &crate::model::tool::ScheduleWakeupInput) -> Strin
         "message-dot--tool",
         "message-card-header--tool",
         &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">DELAY:</span><span class="tool-io-value">{}s</span></div><div class="tool-io"><span class="tool-io-label">REASON:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">PROMPT:</span><span class="tool-io-value">{}</span></div>"#,
-            sw.delay_seconds, sw.reason, prompt
+            "{}{}{}",
+            tool_io_row("DELAY", &format!("{}s", sw.delay_seconds)),
+            tool_io_row("REASON", &sw.reason),
+            tool_io_row("PROMPT", prompt)
         ),
         false,
         "",
@@ -455,10 +447,7 @@ fn render_cron_create(cc: &crate::model::tool::CronCreateInput) -> String {
         "CronCreate",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">CRON:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">PROMPT:</span><span class="tool-io-value">{}</span></div>"#,
-            cc.cron, cc.prompt
-        ),
+        &format!("{}{}", tool_io_row("CRON", &cc.cron), tool_io_row("PROMPT", &cc.prompt)),
         false,
         "",
     )
@@ -469,10 +458,7 @@ fn render_cron_delete(cd: &crate::model::tool::CronDeleteInput) -> String {
         "CronDelete",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">ID:</span><span class="tool-io-value">{}</span></div>"#,
-            cd.id
-        ),
+        &tool_io_row("ID", &cd.id),
         false,
         "",
     )
@@ -495,8 +481,11 @@ fn render_monitor(m: &crate::model::tool::MonitorInput) -> String {
         "message-dot--tool",
         "message-card-header--tool",
         &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">DESC:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">TIMEOUT:</span><span class="tool-io-value">{}ms</span></div><div class="tool-io"><span class="tool-io-label">PERSISTENT:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">CMD:</span><span class="tool-io-value">{}</span></div>"#,
-            m.description, m.timeout_ms, m.persistent, m.command
+            "{}{}{}{}",
+            tool_io_row("DESC", &m.description),
+            tool_io_row("TIMEOUT", &format!("{}ms", m.timeout_ms)),
+            tool_io_row("PERSISTENT", &m.persistent.to_string()),
+            tool_io_row("CMD", &m.command)
         ),
         false,
         "",
@@ -510,10 +499,7 @@ fn render_task(t: &crate::model::tool::TaskInput) -> String {
         "Task / Agent",
         "message-dot--thinking",
         "message-card-header--thinking",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">DESC:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">AGENT:</span><span class="tool-io-value">{}</span></div>"#,
-            desc, sub
-        ),
+        &format!("{}{}", tool_io_row("DESC", desc), tool_io_row("AGENT", sub)),
         false,
         "",
     )
@@ -525,10 +511,7 @@ fn render_team(t: &crate::model::tool::TeamInput) -> String {
         "Team",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">NAME:</span><span class="tool-io-value">{}</span></div>"#,
-            name
-        ),
+        &tool_io_row("NAME", name),
         false,
         "",
     )
@@ -540,10 +523,7 @@ fn render_send_message(sm: &crate::model::tool::SendMessageInput) -> String {
         "SendMessage",
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">TO:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">MSG:</span><span class="tool-io-value">{}</span></div>"#,
-            agent, sm.message
-        ),
+        &format!("{}{}", tool_io_row("TO", agent), tool_io_row("MSG", &sm.message)),
         false,
         "",
     )
@@ -556,10 +536,7 @@ fn render_skill(s: &crate::model::tool::SkillInput) -> String {
         &title,
         "message-dot--tool",
         "message-card-header--tool",
-        &format!(
-            r#"<div class="tool-io"><span class="tool-io-label">SKILL:</span><span class="tool-io-value">{}</span></div><div class="tool-io"><span class="tool-io-label">ARGS:</span><span class="tool-io-value">{}</span></div>"#,
-            s.skill, args
-        ),
+        &format!("{}{}", tool_io_row("SKILL", &s.skill), tool_io_row("ARGS", args)),
         false,
         "",
     )
@@ -582,16 +559,9 @@ fn render_generic(name: &str, input: &serde_json::Value) -> String {
         .map(|obj| {
             obj.iter()
                 .map(|(k, v)| {
-                    let val = if v.is_string() {
-                        v.as_str().unwrap().to_string()
-                    } else {
-                        v.to_string()
-                    };
-                    format!(
-                        r#"<div class="tool-io"><span class="tool-io-label">{}:</span><span class="tool-io-value">{}</span></div>"#,
-                        k.to_uppercase(),
-                        val
-                    )
+                    let val =
+                        if v.is_string() { v.as_str().unwrap().to_string() } else { v.to_string() };
+                    tool_io_row(&k.to_uppercase(), &val)
                 })
                 .collect()
         })
@@ -601,11 +571,14 @@ fn render_generic(name: &str, input: &serde_json::Value) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// Shared HTML helper
+// Shared HTML helpers
 // ---------------------------------------------------------------------------
 
-fn html_escape(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+/// Render a single `<div class="tool-io">` label/value row.
+fn tool_io_row(label: &str, value: &str) -> String {
+    format!(
+        r#"<div class="tool-io"><span class="tool-io-label">{label}:</span><span class="tool-io-value">{value}</span></div>"#
+    )
 }
 
 /// Return the last path component (basename) of a file path.

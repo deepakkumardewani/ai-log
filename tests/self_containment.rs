@@ -75,7 +75,7 @@ fetch('http://api.example.com/data');
 
     #[test]
     fn generated_stub_is_self_contained() {
-        let ctx = cclog::render::html::stub_context();
+        let ctx = weavr::render::html::stub_context();
         let html = ctx.render().expect("stub template should render");
         assert!(is_self_contained(&html), "stub HTML should have no external URLs");
     }

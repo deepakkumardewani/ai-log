@@ -1,5 +1,5 @@
 /**
- * cclog transcript interactivity — self-contained, no external dependencies.
+ * weavr transcript interactivity — self-contained, no external dependencies.
  *
  * Features:
  *   1. Message-type filter chips (OR within category, AND across categories)
@@ -304,7 +304,7 @@
       var current = document.documentElement.getAttribute('data-theme');
       var next = current === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('cclog-theme', next);
+      localStorage.setItem('weavr-theme', next);
       updateIcon();
     });
 
@@ -346,7 +346,7 @@
   var openModal = null;
 
   function initModal() {
-    var overlay = document.getElementById('cclog-modal');
+    var overlay = document.getElementById('weavr-modal');
     if (!overlay) return;
     var bodyEl = overlay.querySelector('.modal-body');
     var closeBtn = overlay.querySelector('.modal-close');
@@ -460,7 +460,7 @@
 
   function initTooltip() {
     tooltipEl = document.createElement('div');
-    tooltipEl.className = 'cclog-tooltip';
+    tooltipEl.className = 'weavr-tooltip';
     tooltipEl.setAttribute('aria-hidden', 'true');
     tooltipEl.setAttribute('hidden', '');
     document.body.appendChild(tooltipEl);

@@ -27,7 +27,7 @@ impl Project {
     ///
     /// | `self.name` | `display_name()` |
     /// |---|---|
-    /// | `-Users-deepak-Documents-Programs-cclog` | `cclog` |
+    /// | `-Users-deepak-Documents-Programs-weavr` | `weavr` |
     /// | `my-project` | `my-project` |
     /// | `-leading-dash` | `leading-dash` |
     /// | `trailing-dash-` | `trailing-dash-` (fallback) |
@@ -135,7 +135,7 @@ mod tests {
 
     #[test]
     fn discover_projects_from_fixture_dir() {
-        let tmp = std::env::temp_dir().join(format!("cclog-proj-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("weavr-proj-test-{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
 
         // Create a project with sessions.
@@ -169,7 +169,7 @@ mod tests {
 
     #[test]
     fn empty_dir_returns_no_projects() {
-        let tmp = std::env::temp_dir().join(format!("cclog-empty-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("weavr-empty-{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
         let projects = discover_projects(&tmp);
         assert!(projects.is_empty());
@@ -197,11 +197,11 @@ mod tests {
     #[test]
     fn display_name_normal_case() {
         let p = Project {
-            name: "-Users-deepak-Documents-Programs-cclog".into(),
+            name: "-Users-deepak-Documents-Programs-weavr".into(),
             path: PathBuf::from("/tmp"),
             sessions: vec![],
         };
-        assert_eq!(p.display_name(), "cclog");
+        assert_eq!(p.display_name(), "weavr");
     }
 
     #[test]

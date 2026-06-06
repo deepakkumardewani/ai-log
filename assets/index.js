@@ -1,5 +1,5 @@
 /**
- * cclog interactivity — self-contained, no external dependencies.
+ * weavr interactivity — self-contained, no external dependencies.
  *
  * Works on both the index page (project list) and per-project page
  * (session list).  Detects page context from the DOM.
@@ -28,7 +28,7 @@
     ? ['data-prompt', 'data-title', 'data-id']
     : ['data-display-name', 'data-short-name', 'data-name'];
 
-  var VIEW_KEY = 'cclog:index:viewMode';
+  var VIEW_KEY = 'weavr:index:viewMode';
 
   // -----------------------------------------------------------------------
   // 1. View-mode toggle (index page only)
@@ -383,7 +383,7 @@
       var current = document.documentElement.getAttribute('data-theme');
       var next = current === 'light' ? 'dark' : 'light';
       document.documentElement.setAttribute('data-theme', next);
-      try { localStorage.setItem('cclog-theme', next); } catch (_) {}
+      try { localStorage.setItem('weavr-theme', next); } catch (_) {}
       updateIcon();
     });
 

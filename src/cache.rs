@@ -1,6 +1,6 @@
 //! SQLite cache for per-session metadata.
 //!
-//! Stored at `<projects_dir>/cclog-cache.db`. Caches token totals, message
+//! Stored at `<projects_dir>/weavr-cache.db`. Caches token totals, message
 //! counts, timestamps, and file mtimes so subsequent runs can skip re-parsing
 //! unchanged JSONL files.
 //!
@@ -249,7 +249,7 @@ mod tests {
     fn temp_cache() -> (Cache, std::path::PathBuf) {
         let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dir =
-            std::env::temp_dir().join(format!("cclog-cache-test-{}-{}", std::process::id(), n));
+            std::env::temp_dir().join(format!("weavr-cache-test-{}-{}", std::process::id(), n));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test.db");
         let cache = Cache::open(&path).unwrap();
@@ -375,7 +375,7 @@ mod tests {
     fn schema_version_bump_rebuilds() {
         let n = TEST_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let dir =
-            std::env::temp_dir().join(format!("cclog-cache-schema-{}-{}", std::process::id(), n));
+            std::env::temp_dir().join(format!("weavr-cache-schema-{}-{}", std::process::id(), n));
         fs::create_dir_all(&dir).unwrap();
         let path = dir.join("test.db");
 

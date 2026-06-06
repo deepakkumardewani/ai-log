@@ -6,6 +6,8 @@
 
 use similar::{ChangeTag, TextDiff};
 
+use super::html_escape;
+
 /// Output of a unified diff render.
 pub struct DiffOutput {
     /// The rendered diff HTML.
@@ -152,10 +154,6 @@ fn strip_newline(s: &str) -> &str {
 
 fn fmt_num(idx: Option<usize>) -> String {
     idx.map_or(String::new(), |n| (n + 1).to_string())
-}
-
-fn html_escape(input: &str) -> String {
-    input.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 // ---------------------------------------------------------------------------

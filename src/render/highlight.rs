@@ -8,6 +8,8 @@ use syntect::highlighting::ThemeSet;
 use syntect::html::highlighted_html_for_string;
 use syntect::parsing::SyntaxSet;
 
+use super::html_escape;
+
 static SYNTAX_SET: OnceLock<SyntaxSet> = OnceLock::new();
 static THEME_SET: OnceLock<ThemeSet> = OnceLock::new();
 
@@ -34,10 +36,6 @@ pub fn highlight(code: &str, language: &str) -> String {
             format!("<pre style=\"background:#1a1a1a;color:#e0e0e0;padding:12px;border-radius:2px;overflow-x:auto;font-family:var(--font-mono);font-size:12px;line-height:1.5;\"><code>{}</code></pre>", escaped)
         }
     }
-}
-
-fn html_escape(input: &str) -> String {
-    input.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
 }
 
 #[cfg(test)]

@@ -4,9 +4,9 @@ use assert_cmd::Command;
 
 #[test]
 fn stub_command_creates_html_file() {
-    let output_path = std::env::temp_dir().join("cclog-test-stub.html");
+    let output_path = std::env::temp_dir().join("weavr-test-stub.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["stub", "--output", output_path.to_str().unwrap()]);
     cmd.assert().success();
 
@@ -23,9 +23,9 @@ fn stub_command_creates_html_file() {
 #[test]
 fn export_command_from_fixture() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-export.html");
+    let output_path = std::env::temp_dir().join("weavr-test-export.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["export", fixture.to_str().unwrap(), "--output", output_path.to_str().unwrap()]);
     cmd.assert().success();
 
@@ -41,9 +41,9 @@ fn export_command_from_fixture() {
 #[test]
 fn export_shortcut_with_input_flag() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/entry_user.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-shortcut.html");
+    let output_path = std::env::temp_dir().join("weavr-test-shortcut.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--input",
         fixture.to_str().unwrap(),
@@ -61,9 +61,9 @@ fn export_shortcut_with_input_flag() {
 #[test]
 fn self_contained_output_no_external_urls() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-self-contained.html");
+    let output_path = std::env::temp_dir().join("weavr-self-contained.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["export", fixture.to_str().unwrap(), "--output", output_path.to_str().unwrap()]);
     cmd.assert().success();
 
@@ -83,9 +83,9 @@ fn self_contained_output_no_external_urls() {
 #[test]
 fn export_markdown_from_fixture() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-export.md");
+    let output_path = std::env::temp_dir().join("weavr-test-export.md");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -119,9 +119,9 @@ fn export_markdown_with_detail_levels() {
         ("minimal", vec!["### User", "### Assistant"], vec!["#### Bash", "claude-opus"]),
         ("user-only", vec!["### User"], vec!["### Assistant"]),
     ] {
-        let output_path = std::env::temp_dir().join(format!("cclog-test-detail-{}.md", level));
+        let output_path = std::env::temp_dir().join(format!("weavr-test-detail-{}.md", level));
 
-        let mut cmd = Command::cargo_bin("cclog").unwrap();
+        let mut cmd = Command::cargo_bin("weavr").unwrap();
         cmd.args([
             "export",
             fixture.to_str().unwrap(),
@@ -149,11 +149,11 @@ fn export_markdown_with_detail_levels() {
 #[test]
 fn export_markdown_compact_mode() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_full = std::env::temp_dir().join("cclog-test-full.md");
-    let output_compact = std::env::temp_dir().join("cclog-test-compact.md");
+    let output_full = std::env::temp_dir().join("weavr-test-full.md");
+    let output_compact = std::env::temp_dir().join("weavr-test-compact.md");
 
     // Full (non-compact)
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -165,7 +165,7 @@ fn export_markdown_compact_mode() {
     cmd.assert().success();
 
     // Compact
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -196,7 +196,7 @@ fn export_markdown_compact_mode() {
 fn export_markdown_default_extension_is_md() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["export", fixture.to_str().unwrap(), "--format", "md"]);
     cmd.assert().success();
 
@@ -222,7 +222,7 @@ fn unique_test_id() -> u32 {
 
 fn setup_fixture_projects_dir() -> std::path::PathBuf {
     let tmp = std::env::temp_dir().join(format!(
-        "cclog-phase5-{}-{}",
+        "weavr-phase5-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
@@ -256,9 +256,9 @@ fn all_projects_generates_index_and_combined_pages() {
     let projects_dir = setup_fixture_projects_dir();
     let n = unique_test_id();
     let output_dir =
-        std::env::temp_dir().join(format!("cclog-p5-out-{}-{}", std::process::id(), n));
+        std::env::temp_dir().join(format!("weavr-p5-out-{}-{}", std::process::id(), n));
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -309,12 +309,12 @@ fn all_projects_generates_index_and_combined_pages() {
 fn no_individual_sessions_skips_per_session_files() {
     let projects_dir = setup_fixture_projects_dir();
     let output_dir = std::env::temp_dir().join(format!(
-        "cclog-p5-nosess-{}-{}",
+        "weavr-p5-nosess-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -341,12 +341,12 @@ fn no_individual_sessions_skips_per_session_files() {
 fn session_id_prefix_match_filters_correctly() {
     let projects_dir = setup_fixture_projects_dir();
     let output_dir = std::env::temp_dir().join(format!(
-        "cclog-p5-sid-{}-{}",
+        "weavr-p5-sid-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -372,13 +372,13 @@ fn session_id_prefix_match_filters_correctly() {
 fn ambiguous_session_id_prefix_errors() {
     let projects_dir = setup_fixture_projects_dir();
     let output_dir = std::env::temp_dir().join(format!(
-        "cclog-p5-ambig-{}-{}",
+        "weavr-p5-ambig-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
 
     // "sess-a" matches both sess-a1 and sess-a2.
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -399,13 +399,13 @@ fn ambiguous_session_id_prefix_errors() {
 fn clear_cache_flag_works() {
     let projects_dir = setup_fixture_projects_dir();
     let output_dir = std::env::temp_dir().join(format!(
-        "cclog-p5-clrcache-{}-{}",
+        "weavr-p5-clrcache-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
 
     // First run to populate cache.
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -416,16 +416,16 @@ fn clear_cache_flag_works() {
     cmd.assert().success();
 
     // Cache file should exist.
-    let cache_path = projects_dir.join("cclog-cache.db");
+    let cache_path = projects_dir.join("weavr-cache.db");
     assert!(cache_path.exists(), "cache file should be created");
 
     // Second run with --clear-cache.
     let output_dir2 = std::env::temp_dir().join(format!(
-        "cclog-p5-clrcache2-{}-{}",
+        "weavr-p5-clrcache2-{}-{}",
         std::process::id(),
         unique_test_id()
     ));
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "--all-projects",
         "--projects-dir",
@@ -450,7 +450,7 @@ fn clear_cache_flag_works() {
 
 #[test]
 fn tui_flag_exits_with_code_2() {
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["--tui"]);
     let output = cmd.assert().code(2);
     let stderr = String::from_utf8_lossy(&output.get_output().stderr);
@@ -464,7 +464,7 @@ fn tui_flag_exits_with_code_2() {
 fn from_date_rejects_invalid_input() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["export", fixture.to_str().unwrap(), "--from-date", "not-a-date"]);
     cmd.assert().failure();
 }
@@ -473,7 +473,7 @@ fn from_date_rejects_invalid_input() {
 fn to_date_rejects_invalid_input() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["export", fixture.to_str().unwrap(), "--to-date", "garbage"]);
     cmd.assert().failure();
 }
@@ -481,9 +481,9 @@ fn to_date_rejects_invalid_input() {
 #[test]
 fn from_date_iso_accepts_valid_date() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-datefilter.html");
+    let output_path = std::env::temp_dir().join("weavr-test-datefilter.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -501,9 +501,9 @@ fn from_date_iso_accepts_valid_date() {
 #[test]
 fn from_date_to_date_natural_language() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-datenl.html");
+    let output_path = std::env::temp_dir().join("weavr-test-datenl.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -525,9 +525,9 @@ fn from_date_to_date_natural_language() {
 #[test]
 fn page_size_flag_is_accepted() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
-    let output_path = std::env::temp_dir().join("cclog-test-paginated.html");
+    let output_path = std::env::temp_dir().join("weavr-test-paginated.html");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args([
         "export",
         fixture.to_str().unwrap(),
@@ -545,17 +545,17 @@ fn page_size_flag_is_accepted() {
     // Clean up additional pages.
     for i in 2..=4 {
         let _ = std::fs::remove_file(
-            std::env::temp_dir().join(format!("cclog-test-paginated-page-{}.html", i)),
+            std::env::temp_dir().join(format!("weavr-test-paginated-page-{}.html", i)),
         );
     }
-    let _ = std::fs::remove_file(std::env::temp_dir().join("cclog-test-paginated.html"));
+    let _ = std::fs::remove_file(std::env::temp_dir().join("weavr-test-paginated.html"));
 }
 
 #[test]
 fn debug_flag_is_accepted() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
 
-    let mut cmd = Command::cargo_bin("cclog").unwrap();
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
     cmd.args(["--debug", "export", fixture.to_str().unwrap()]);
     cmd.assert().success();
 }
