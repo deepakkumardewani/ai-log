@@ -1,6 +1,6 @@
 [package]
 name = "weavr"
-version = "0.2.0"
+version = "1.0.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Claude Code transcript exporter — beautiful, self-contained HTML and Markdown"
@@ -10,6 +10,21 @@ readme = "README.md"
 keywords = ["claude", "code", "transcript", "exporter", "html", "markdown", "jsonl"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
 homepage = "https://github.com/deepakkumardewani/weavr"
+# Keep the published crate lean — ship only what's needed to build + run.
+# Everything below is dev/internal tooling not required by crate consumers.
+exclude = [
+    "agent_docs/",
+    "tests/",
+    "screenshots/",
+    "scripts/",
+    ".github/",
+    "justfile",
+    "install.sh",
+    "clippy.toml",
+    "rustfmt.toml",
+    "CLAUDE.md",
+    ".impeccable.md",
+]
 
 [dependencies]
 # Phase 1: Data layer

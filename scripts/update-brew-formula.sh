@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # Update the Homebrew formula after publishing a new weavr release.
 #
-# Usage: VERSION=v0.2.0 ./scripts/update-brew-formula.sh
+# Usage: VERSION=v1.0.0 ./scripts/update-brew-formula.sh
 #
 # Prerequisites:
 #   1. A release tag has been pushed and GitHub has published the release.
@@ -11,7 +11,7 @@
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
-VERSION="${VERSION:?must set VERSION, e.g. VERSION=v0.2.0}"
+VERSION="${VERSION:?must set VERSION, e.g. VERSION=v1.0.0}"
 VERSION_CLEAN="${VERSION#v}"
 TAP_DIR="$(cd "$(dirname "$0")/../../homebrew-weavr" && pwd)"
 FORMULA="$TAP_DIR/Formula/weavr.rb"

@@ -12,7 +12,7 @@ use crate::render::{IndexProjectData, ProjectSessionData};
 
 /// weavr — Claude Code transcript exporter.
 #[derive(Parser)]
-#[command(name = "weavr", version = "0.2.0")]
+#[command(name = "weavr", version)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Option<Command>,

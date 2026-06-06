@@ -1,6 +1,9 @@
 # Changelog
 
-## [0.2.0] — Unreleased
+## [1.0.0] — 2026-06-06
+
+First public release. weavr is the renamed, hardened successor to the internal
+`cclog` prototype: a fast, self-contained Claude Code transcript exporter.
 
 ### Added
 - Renamed from `cclog` to `weavr` — binary, crate, output dir, cache, branding

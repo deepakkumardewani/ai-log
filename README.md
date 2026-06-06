@@ -2,7 +2,40 @@
 
 A fast, self-contained Rust CLI that converts Claude Code transcript JSONL files into beautiful HTML and Markdown.
 
-`weavr` is a Rust reimplementation of [claude-code-log](https://github.com/daaain/claude-code-log), focused on speed, zero-dependency output artefacts, and a clean Material 3 dark theme.
+`weavr` is a Rust reimplementation of [claude-code-log](https://github.com/daaain/claude-code-log), focused on speed, zero-dependency output artefacts, and a clean Material 3 design.
+
+## Why weavr?
+
+The excellent [claude-code-log](https://github.com/daaain/claude-code-log) proved how useful it is to turn raw Claude Code transcripts into something you can actually read. weavr started as a personal itch with that workflow and grew into a ground-up rewrite around two goals:
+
+- **Speed.** Transcripts get large fast. A Python tool re-parses and re-renders the whole archive on every run; weavr is a single native binary with a single-pass JSONL parser and an in-memory session DAG, plus a SQLite cache for incremental rebuilds. In practice it exports **18–46× faster** (see [Performance](#performance)) — fast enough to regenerate your entire history in the time it takes to alt-tab.
+- **Design.** weavr ships a deliberate Material 3 light/dark theme with a flat dot-timeline that reads like a chronological event stream, rich inline tool rendering (Bash IN/OUT, Read/Edit/Write diffs, modals for Skill/Agent), and **fully self-contained output** — every HTML file embeds its fonts, CSS, and JS so nothing ever phones home. A CI gate rejects any `http(s)://` URL in the output.
+
+It's also trivially installable as a single binary (`brew`, `cargo binstall`, `cargo install`, shell installer) with built-in `self-update` — no Python runtime, no virtualenv.
+
+### weavr vs. claude-code-log
+
+| | **weavr** (Rust) | **claude-code-log** (Python) |
+|---|---|---|
+| Speed (all projects) | **~1.3 s** | ~24 s |
+| Speed (single session) | **~28 ms** | ~1.3 s |
+| Distribution | single static binary (brew / binstall / cargo / shell) | `uvx` / `pip` (needs Python) |
+| Self-contained output | ✅ zero external URLs (CI-enforced) | partial |
+| Incremental rebuilds | ✅ SQLite cache | ⚠️ re-renders each run |
+| Theme | Material 3 light/dark, dot-timeline | minimalist HTML |
+| HTML export | ✅ | ✅ |
+| Markdown export + detail levels + `--compact` | ✅ | ✅ |
+| Token usage tracking | ✅ | ✅ |
+| Date-range filtering (natural language) | ✅ | ✅ |
+| Client-side filter chips + in-page search | ✅ | ✅ (runtime filtering) |
+| Multi-project hierarchy + master index | ✅ | ✅ |
+| Self-update command | ✅ | — |
+| Interactive TUI | ⏳ planned | ✅ |
+| Interactive zoomable timeline | ⏳ planned | ✅ |
+| Image rendering | ⏳ planned | ✅ |
+| Windows | ⏳ planned | ✅ |
+
+Both tools share the same JSONL input format and the `--detail` / `--compact` philosophy — weavr trades a couple of claude-code-log's richer browsing features (TUI, zoomable timeline) for raw speed, a self-contained artefact, and a single-binary install. If you live in the terminal and want an interactive TUI today, claude-code-log is great. If you want the fastest possible export and offline-portable HTML, reach for weavr.
 
 ## Quickstart
 
@@ -250,26 +283,41 @@ weavr export session.jsonl --open-browser
 - Diffs rendered as `\`\`\`diff` blocks with unified `+/-` hunks
 - `--compact` and `--detail` work orthogonally
 
-## Project Status
+## Performance
 
-`weavr` is in active development. Completed phases:
+Benchmarked with [`hyperfine`](https://github.com/sharkdp/hyperfine) (warmup + multiple runs, no cache) on Apple Silicon against `claude-code-log` over the same input. Re-run any time with `just bench`.
 
-- [x] Phase 0 — Scaffolding (Cargo, CI, Tailwind build.rs)
-- [x] Phase 1 — Data layer (models, JSONL parser, session DAG, aggregation)
-- [x] Phase 2 — Templates and assets (Material 3 tokens, Askama base)
-- [x] Phase 3 — Single-session HTML export with full tool rendering
-- [x] Phase 4 — Markdown export with detail levels and compact mode
-- [x] Phase 5 — Project hierarchy + master index + SQLite cache
-- [x] Phase 6 — CLI parity (date filters, pagination, `--debug`, `--tui` stub)
-- [x] Phase 7 — Client-side interactivity (filter chips, in-page search, sidebar navigation, theme toggle)
+| Mode | weavr (Rust) | claude-code-log (Python) | Speedup |
+|------|--------------|--------------------------|---------|
+| All projects (160 sessions, 97 MB) | **1.32 s** | 24.10 s | **18.2×** |
+| Single project (42 sessions) | **466 ms** | 9.68 s | **20.8×** |
+| Single session (19 MB, ~500 msgs) | **27.5 ms** | 1.28 s | **46.5×** |
 
-### Deferred to future releases
+The gap is widest on small inputs, where Python's startup and import overhead dominate; even on large I/O-bound runs weavr stays ~18× ahead. Full methodology and the optimizations behind these numbers live in [agent_docs/weavr-bench-results.md](agent_docs/weavr-bench-results.md).
 
-- **Interactive TUI** — `--tui` currently exits with "coming in a later release"
-- **Timeline view** — zoomable interactive timeline of message activity
-- **JSON export** — `--format json` for programmatic consumption
-- **Windows support** — currently macOS and Linux only
-- **Cost estimation** — per-session API cost breakdown
+## Roadmap
+
+### Done (v1.0)
+
+- [x] Single-session HTML export with full, rich tool rendering
+- [x] Markdown export with detail levels (`full`/`high`/`low`/`minimal`/`user-only`) + `--compact`
+- [x] Project hierarchy + master index + per-project combined pages
+- [x] SQLite cache for fast incremental rebuilds
+- [x] Material 3 light/dark theme with flat dot-timeline
+- [x] Client-side interactivity — filter chips, in-page search, theme toggle, sidebar nav
+- [x] Date-range filtering with natural language (`today`, `yesterday`, `last week`)
+- [x] Pagination for long sessions
+- [x] Self-contained output (zero external URLs, CI-enforced)
+- [x] Multi-channel install (brew, binstall, cargo, shell) + `self-update`
+
+### Planned
+
+- [ ] **Interactive TUI** — `--tui` currently exits with "coming in a later release"
+- [ ] **Interactive timeline** — zoomable, time-grouped view of message activity
+- [ ] **Image rendering** — inline display of images embedded in transcripts
+- [ ] **JSON export** — `--format json` for programmatic consumption
+- [ ] **Windows support** — currently macOS and Linux only
+- [ ] **Cost estimation** — per-session API cost breakdown
 
 ## Development
 
