@@ -1,0 +1,95 @@
+# weavr — GitHub Release workflow
+# Triggered by pushing a version tag: v0.2.0, v1.0.0, etc.
+# Builds macOS (aarch64 + x86_64) and Linux (x86_64) binaries,
+# creates a GitHub Release with archives + checksums + installer scripts.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Package (unix)
+        run: |
+          cd target/${{ matrix.target }}/release
+          ARCHIVE="weavr-${{ matrix.target }}.tar.gz"
+          tar czf "../../../$ARCHIVE" weavr
+          cd ../../..
+          shasum -a 256 "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: weavr-${{ matrix.target }}
+          path: |
+            weavr-*.tar.gz
+            weavr-*.tar.gz.sha256
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: weavr-*
+          merge-multiple: true
+          path: dist/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: weavr ${{ github.ref_name }}
+          body: |
+            weavr ${{ github.ref_name }}
+
+            ### Install
+
+            ```sh
+            # Via shell installer
+            curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/deepakkumardewani/weavr/main/install.sh | sh
+
+            # Via cargo-binstall
+            cargo binstall weavr
+
+            # Via cargo
+            cargo install weavr
+
+            # Direct download — pick your platform below
+            ```
+          files: dist/*
+          generate_release_notes: true
