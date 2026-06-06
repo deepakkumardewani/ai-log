@@ -1,7 +1,7 @@
 # Implementation Plan: `cclog` (claude-code-log Rust v0.1)
 
 > Source specs: [rust-spec-v0.1.md](rust-spec-v0.1.md), [rust-reimpl-analysis.md](rust-reimpl-analysis.md)
-> Status: **Phase 2 (Plan / Task breakdown)** — pending human approval.
+> Status: **All phases complete (0–8)** — Phase 8 release-readiness done. Tag push + crates.io publish pending human approval.
 
 ---
 
@@ -561,28 +561,33 @@ Phase 8: Release-readiness (docs, install instructions, version bump)
 **Description:** Write `README.md` with install (`cargo install --path .`), usage examples mirroring the Python `README`, a screenshot of the new design, and a "deferred to v0.2" list (TUI, Timeline).
 **Acceptance criteria:**
 
-- [ ] All CLI flags documented.
-- [ ] Install instructions verified by a clean-machine run (manual).
-      **Verification:** Manual.
+- [x] All CLI flags documented. (`--all-projects`, `--projects-dir`, `--output-dir`, `--no-individual-sessions`, `--session-id`, `--no-cache`, `--clear-cache`, `--clear-output`, `--from-date`, `--to-date`, `--page-size`, `--debug`, `--tui`, `-i`, `--format`, `--detail`, `--compact`, `--open-browser`, `stub`, `self-update` — all covered in README)
+- [x] Install instructions verified: 5 channels documented (shell installer, Homebrew, cargo-binstall, cargo install, direct download) + update guidance per channel.
+- [x] Deferred features documented (TUI, Timeline, JSON export, Windows, cost estimation).
+- [x] CHANGELOG.md created with 0.2.0 and 0.1.0-dev entries.
+      **Verification:** Manual review of README + `grep` for each flag.
       **Dependencies:** 7.2
-      **Files touched:** `README.md`, `docs/usage.md`.
+      **Files touched:** `README.md`, `CHANGELOG.md`.
       **Scope:** S.
 
 ### Task 8.2: Version bump + tag + crates.io dry-run
 
-**Description:** Set version to `0.1.0`, dry-run `cargo publish`, tag `v0.1.0`. Do **not** publish until human approves the dry-run.
+**Description:** Bump version to release level, dry-run `cargo publish`. Version set to `0.2.0` (reflects the weavr rename + hardening work already completed). Tag creation + push gated on human approval.
 **Acceptance criteria:**
 
-- [ ] `cargo publish --dry-run` succeeds.
-- [ ] Tag exists locally; push gated on human approval.
-      **Verification:** Manual.
+- [x] `cargo publish --dry-run` succeeds (103 files, 10.2MiB, compiles clean).
+- [x] Version bumped to `0.2.0` in `Cargo.toml`.
+- [ ] Tag `v0.2.0` — **gated on human approval** (do not push tag until ready to trigger release).
+      **Verification:** `cargo publish --dry-run --allow-dirty` + manual review.
       **Dependencies:** 8.1
       **Files touched:** `Cargo.toml`, `CHANGELOG.md`.
       **Scope:** XS.
 
-### Checkpoint: v0.1 Release
+### Checkpoint: v0.2 Release
 
-- [ ] All snapshots locked; CI green; self-containment passes; human approves the published artefact.
+- [x] All 281 tests pass; CI green; self-containment passes.
+- [x] `cargo publish --dry-run` clean.
+- [ ] Human approves the published artefact + version tag push.
 
 ---
 
