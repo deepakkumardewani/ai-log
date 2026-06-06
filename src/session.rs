@@ -38,75 +38,6 @@ pub struct Session {
     pub forks: Vec<Uuid>,
 }
 
-/// Context for building a session tree.
-struct BuildContext {
-    /// All entries indexed by UUID → entry.
-    entry_map: HashMap<Uuid, TranscriptEntry>,
-    /// UUID → Vec<child UUID> (from parentUuid).
-    children_map: HashMap<Uuid, Vec<Uuid>>,
-}
-
-impl BuildContext {
-    fn new(entries: &[TranscriptEntry]) -> Self {
-        let mut entry_map: HashMap<Uuid, TranscriptEntry> = HashMap::with_capacity(entries.len());
-        let mut children_map: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-        let mut synthetic_parents: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
-
-        for entry in entries {
-            let (uuid, parent_uuid, _is_sidechain) = match entry {
-                TranscriptEntry::Unknown { raw, .. } => {
-                    // Try to extract common fields from the raw JSON.
-                    let uuid = raw
-                        .get("uuid")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| Uuid::parse_str(s).ok());
-                    let parent = raw
-                        .get("parentUuid")
-                        .and_then(|v| v.as_str())
-                        .and_then(|s| Uuid::parse_str(s).ok());
-                    let sidechain =
-                        raw.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false);
-                    match uuid {
-                        Some(id) => (id, parent, sidechain),
-                        None => continue,
-                    }
-                }
-                other => {
-                    let common = other.common();
-                    (common.uuid, common.parent_uuid, common.is_sidechain)
-                }
-            };
-
-            entry_map.insert(uuid, entry.clone());
-
-            if let Some(parent) = parent_uuid {
-                if entry_map.contains_key(&parent) {
-                    children_map.entry(parent).or_default().push(uuid);
-                } else if synthetic_parents.contains_key(&parent) {
-                    synthetic_parents.get_mut(&parent).unwrap().push(uuid);
-                } else {
-                    synthetic_parents.entry(parent).or_default().push(uuid);
-                }
-            }
-        }
-
-        // Re-check synthetic parents: if the parent has since appeared in the
-        // entry map, move children from synthetic to real.
-        let resolved: Vec<Uuid> =
-            synthetic_parents.keys().filter(|k| entry_map.contains_key(k)).cloned().collect();
-        for parent in &resolved {
-            if let Some(children) = synthetic_parents.remove(parent) {
-                children_map.entry(*parent).or_default().extend(children);
-            }
-        }
-
-        BuildContext {
-            entry_map,
-            children_map,
-        }
-    }
-}
-
 /// Build a [`Session`] from a flat list of entries.
 ///
 /// Orphan messages (those whose `parentUuid` references a UUID not present
@@ -122,30 +53,72 @@ pub fn build_session(entries: &[TranscriptEntry]) -> Session {
         };
     }
 
-    let ctx = BuildContext::new(entries);
+    let n = entries.len();
 
-    // Determine session ID from the first entry with one.
-    let session_id = entries.iter().filter_map(extract_session_id).next().unwrap_or_default();
+    // --- Phase 1: index entries by UUID, build children_map ---------------
+    let mut entry_map: HashMap<Uuid, TranscriptEntry> = HashMap::with_capacity(n);
+    let mut children_map: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
+    let mut synthetic_parents: HashMap<Uuid, Vec<Uuid>> = HashMap::new();
 
-    let mut messages: HashMap<Uuid, MessageNode> = HashMap::with_capacity(ctx.entry_map.len());
+    for entry in entries.iter().cloned() {
+        let (uuid, parent_uuid, _is_sidechain) = match &entry {
+            TranscriptEntry::Unknown { raw, .. } => {
+                let uuid =
+                    raw.get("uuid").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok());
+                let parent = raw
+                    .get("parentUuid")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Uuid::parse_str(s).ok());
+                let sidechain = raw.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false);
+                match uuid {
+                    Some(id) => (id, parent, sidechain),
+                    None => continue,
+                }
+            }
+            other => {
+                let common = other.common();
+                (common.uuid, common.parent_uuid, common.is_sidechain)
+            }
+        };
+
+        entry_map.insert(uuid, entry);
+
+        if let Some(parent) = parent_uuid {
+            if entry_map.contains_key(&parent) {
+                children_map.entry(parent).or_default().push(uuid);
+            } else if synthetic_parents.contains_key(&parent) {
+                synthetic_parents.get_mut(&parent).unwrap().push(uuid);
+            } else {
+                synthetic_parents.entry(parent).or_default().push(uuid);
+            }
+        }
+    }
+
+    // Resolve synthetic parents that appeared later in the entry list.
+    let resolved: Vec<Uuid> =
+        synthetic_parents.keys().filter(|k| entry_map.contains_key(k)).cloned().collect();
+    for parent in &resolved {
+        if let Some(children) = synthetic_parents.remove(parent) {
+            children_map.entry(*parent).or_default().extend(children);
+        }
+    }
+
+    // --- Phase 2: determine metadata --------------------------------------
+    let session_id = entry_map.values().filter_map(extract_session_id).next().unwrap_or_default();
+
     let mut sidechains = Vec::new();
     let mut forks = Vec::new();
-
-    // Compute roots: entries with no parentUuid, or whose parentUuid is NOT
-    // in the entry map (synthetic / orphan root).
     let mut root_ids: Vec<Uuid> = Vec::new();
 
-    for (uuid, entry) in &ctx.entry_map {
+    for (uuid, entry) in &entry_map {
         let has_parent_in_map =
-            extract_parent_uuid(entry).map(|p| ctx.entry_map.contains_key(&p)).unwrap_or(false);
+            extract_parent_uuid(entry).map(|p| entry_map.contains_key(&p)).unwrap_or(false);
 
         if !has_parent_in_map {
             root_ids.push(*uuid);
         }
 
-        let children = ctx.children_map.get(uuid).cloned().unwrap_or_default();
-
-        if children.len() > 1 {
+        if children_map.get(uuid).map(|c| c.len()).unwrap_or(0) > 1 {
             forks.push(*uuid);
         }
 
@@ -154,29 +127,30 @@ pub fn build_session(entries: &[TranscriptEntry]) -> Session {
         }
     }
 
-    // Compute depths via BFS from roots.
+    // --- Phase 3: BFS depths from roots -----------------------------------
     let mut depths: HashMap<Uuid, usize> = HashMap::new();
     let mut queue: Vec<(Uuid, usize)> = root_ids.iter().map(|id| (*id, 0)).collect();
     while let Some((uuid, depth)) = queue.pop() {
         depths.insert(uuid, depth);
-        if let Some(children) = ctx.children_map.get(&uuid) {
+        if let Some(children) = children_map.get(&uuid) {
             for child in children {
                 queue.push((*child, depth + 1));
             }
         }
     }
 
-    // Build MessageNodes.
-    for (uuid, entry) in &ctx.entry_map {
-        let children = ctx.children_map.get(uuid).cloned().unwrap_or_default();
-        let depth = depths.get(uuid).copied().unwrap_or(0);
+    // --- Phase 4: build MessageNodes (drain — zero additional clones) -----
+    let mut messages: HashMap<Uuid, MessageNode> = HashMap::with_capacity(n);
+    for (uuid, entry) in entry_map.drain() {
+        let children = children_map.remove(&uuid).unwrap_or_default();
+        let depth = depths.get(&uuid).copied().unwrap_or(0);
 
         messages.insert(
-            *uuid,
+            uuid,
             MessageNode {
-                entry: entry.clone(),
+                entry,
                 children,
-                is_sidechain: is_entry_sidechain(entry),
+                is_sidechain: sidechains.contains(&uuid),
                 depth,
             },
         );
