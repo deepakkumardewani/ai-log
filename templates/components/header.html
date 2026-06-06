@@ -10,19 +10,20 @@
       {% if let Some(name) = project_name %}
       <a href="combined_transcripts.html" class="header-back-link">&larr; {{ name }}</a>
       {% endif %}
-      <span class="header-meta-title">{{ session_title }}</span>
-      <div class="header-meta-stats">
-        <span>{{ session_date }}</span>
-        <span>&#x2022;</span>
-        <span>{{ duration }}</span>
-        <span>&#x2022;</span>
-        <span>{{ message_count }} messages</span>
-        <span>&#x2022;</span>
-        <span>{{ token_total }} tokens</span>
-      </div>
+      <span class="header-session-title">{{ session_title }}</span>
     </div>
   </div>
   <div class="header-actions">
+    <div class="header-session-stats">
+      <span>{{ session_date }}</span>
+      <span class="header-stat-sep">&#x2022;</span>
+      <span>{{ duration }}</span>
+      <span class="header-stat-sep">&#x2022;</span>
+      <span>{{ message_count }} msgs</span>
+      <span class="header-stat-sep">&#x2022;</span>
+      <span>{{ token_total }}</span>
+    </div>
+    <div class="header-separator"></div>
     <button class="header-btn" id="theme-toggle" title="Toggle theme" type="button" aria-label="Toggle theme">&#x25D0;</button>
   </div>
 </header>

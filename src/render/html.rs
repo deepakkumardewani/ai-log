@@ -8,89 +8,38 @@
 //! As of v2, messages are grouped into conversational turns (user bubbles,
 //! assistant cards with Thinking/Tools pills) via [`crate::conversation::group_session`].
 
-use std::collections::HashMap;
-
 use askama::Template;
-use uuid::Uuid;
 
 use crate::aggregate::SessionAggregate;
 use crate::conversation::{flatten_to_timeline, TimelineEvent};
-use crate::model::content::ContentItem;
-use crate::model::entry::TranscriptEntry;
 use crate::session::Session;
 
 use super::tools;
 use super::turn;
 
-/// Maximum character length for `first_user_prompt` before truncation.
-const FIRST_PROMPT_MAX_CHARS: usize = 120;
-
-/// Find the first user prompt in a session by walking the DAG in DFS order
-/// from roots. Returns the truncated text of the first user message with
-/// actual text content, or `None` if no user message has text.
+/// Find the first user prompt visible on the session page.
+///
+/// Uses the same flat timeline + visibility filter as `build_flat_timeline_cards`
+/// so that messages that render to nothing (e.g. `<local-command-caveat>` XML
+/// blocks that comrak silently drops) are skipped, matching what the user sees.
 pub fn find_first_user_prompt(session: &Session) -> Option<String> {
-    let mut visited: HashMap<Uuid, bool> = HashMap::new();
-
-    for root_id in &session.root_message_ids {
-        if let Some(prompt) = dfs_find_first_user(*root_id, session, &mut visited) {
-            return Some(truncate_prompt(&prompt));
-        }
-    }
-    None
-}
-
-fn dfs_find_first_user(
-    uuid: Uuid,
-    session: &Session,
-    visited: &mut HashMap<Uuid, bool>,
-) -> Option<String> {
-    if visited.contains_key(&uuid) {
-        return None;
-    }
-    visited.insert(uuid, true);
-
-    if let Some(node) = session.messages.get(&uuid) {
-        if let TranscriptEntry::User(ue) = &node.entry {
-            let text = ue
-                .message
-                .content
-                .iter()
-                .filter_map(|c| match c {
-                    ContentItem::Text { text } => {
-                        let t = text.trim();
-                        if t.is_empty() {
-                            None
-                        } else {
-                            Some(t.to_string())
-                        }
-                    }
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join(" ");
+    for event in &flatten_to_timeline(session) {
+        if let TimelineEvent::UserMessage(ut) = event {
+            if ut.message.trim().is_empty() && ut.images.is_empty() {
+                continue;
+            }
+            // Apply the same visibility guard used when building timeline cards.
+            let html = turn::render_user_block(ut, "preview");
+            if ut.images.is_empty() && !rendered_has_visible_text(&html) {
+                continue;
+            }
+            let text = ut.message.trim();
             if !text.is_empty() {
-                return Some(text);
-            }
-        }
-
-        for child_id in &node.children {
-            if let Some(prompt) = dfs_find_first_user(*child_id, session, visited) {
-                return Some(prompt);
+                return Some(text.to_string());
             }
         }
     }
     None
-}
-
-/// Truncate a prompt string to ~120 chars, preserving UTF-8 grapheme
-/// boundaries and trimming trailing whitespace before appending `…`.
-fn truncate_prompt(s: &str) -> String {
-    if s.chars().count() <= FIRST_PROMPT_MAX_CHARS {
-        s.to_string()
-    } else {
-        let truncated: String = s.chars().take(FIRST_PROMPT_MAX_CHARS).collect();
-        format!("{}…", truncated.trim_end())
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -869,38 +818,6 @@ mod tests {
     }
 
     #[test]
-    fn truncate_prompt_short_string_unchanged() {
-        let s = "Hello, Claude!";
-        assert_eq!(truncate_prompt(s), "Hello, Claude!");
-    }
-
-    #[test]
-    fn truncate_prompt_long_string_truncated_with_ellipsis() {
-        let s = "a".repeat(150);
-        let result = truncate_prompt(&s);
-        assert!(result.ends_with('…'));
-        assert!(result.chars().count() <= 121); // 120 + ellipsis
-    }
-
-    #[test]
-    fn truncate_prompt_preserves_utf8_boundaries() {
-        // Emoji + text to verify char-level (not byte-level) truncation
-        let s = "🚀".repeat(200);
-        let result = truncate_prompt(&s);
-        assert!(result.chars().count() <= 121);
-        // All chars should be valid UTF-8 (verified by String type)
-    }
-
-    #[test]
-    fn truncate_prompt_trims_trailing_whitespace() {
-        let mut s = String::from("Hello");
-        s.push_str(&" ".repeat(50));
-        s.push_str(&"a".repeat(100));
-        let result = truncate_prompt(&s);
-        assert!(!result.starts_with("Hello …"));
-    }
-
-    #[test]
     fn find_first_user_prompt_linear_session() {
         use crate::parser::parse_reader;
         use crate::session::build_session;
@@ -1149,12 +1066,15 @@ mod tests {
     }
 
     #[test]
-    fn stub_context_header_contains_turn_counts() {
+    fn stub_context_header_contains_key_stats() {
         let ctx = stub_context();
         let html = ctx.render().expect("stub template should render");
-        assert!(html.contains("1 user"), "should contain user count");
-        assert!(html.contains("1 assistant"), "should contain assistant count");
-        assert!(html.contains("1 tools"), "should contain tools count");
+        // Header shows date, duration, message count, and token total.
+        assert!(html.contains("msgs"), "header should contain message count label");
+        assert!(
+            html.contains("tokens") || html.contains("k") || html.contains("M"),
+            "header should contain token total"
+        );
     }
 
     // -----------------------------------------------------------------------

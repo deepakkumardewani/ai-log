@@ -141,15 +141,21 @@ pub fn render_user_message_text(text: &str) -> String {
 
 /// Render a thinking block as a collapsible card.
 pub fn render_thinking(thinking: &str) -> String {
+    let label = if thinking.is_empty() {
+        "Thinking".to_string()
+    } else {
+        // Estimate duration: Claude generates ~100 tok/s during thinking, ~4 chars/tok.
+        let secs = (thinking.chars().count() / 400).max(1);
+        format!("Thought for ~{}s", secs)
+    };
     let snippet: String = thinking.chars().take(200).collect();
     let escaped = snippet.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;");
     let more = if thinking.len() > 200 { " …" } else { "" };
     format!(
         r#"<details class="thinking-block" open>
-  <summary class="thinking-summary">Thinking</summary>
-  <div class="thinking-content">{}{}</div>
+  <summary class="thinking-summary">{label}</summary>
+  <div class="thinking-content">{escaped}{more}</div>
 </details>"#,
-        escaped, more
     )
 }
 
@@ -616,16 +622,20 @@ fn basename(path: &str) -> &str {
 /// Render a thinking event as a v3 gray dot-row with inline expand.
 ///
 /// Empty/blank thinking → disabled static row (no body, no toggle).
-/// Non-empty thinking → `<details>` row that expands inline on click.
+/// Non-empty thinking → `<details>` row that expands inline on click,
+/// with an estimated duration label ("Thought for ~Xs") derived from
+/// character count (~100 tok/s × 4 chars/tok).
 pub fn render_thinking_row(text: &str) -> String {
     if text.trim().is_empty() {
         format!(
             r#"<div class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label thinking-disabled">Thinking</span></div>"#
         )
     } else {
+        let secs = (text.chars().count() / 400).max(1);
+        let label = format!("Thought for ~{}s &#x203A;", secs);
         let content = html_escape(text);
         format!(
-            r#"<details class="thinking-row"><summary class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label">Thinking &#x203A;</span></summary><div class="thinking-body"><pre class="thinking-pre">{content}</pre></div></details>"#
+            r#"<details class="thinking-row"><summary class="timeline-row"><div class="dot {DOT_ASSISTANT}"></div><span class="row-label">{label}</span></summary><div class="thinking-body"><pre class="thinking-pre">{content}</pre></div></details>"#
         )
     }
 }
@@ -836,7 +846,7 @@ fn strip_line_numbers(content: &str) -> String {
 ///   4. `~/.claude/skills/{name}/SKILL.md`
 fn try_load_skill_file(skill_name: &str) -> Option<String> {
     let home = std::env::var("HOME").ok()?;
-    let short = skill_name.split(':').last().unwrap_or(skill_name);
+    let short = skill_name.split(':').next_back().unwrap_or(skill_name);
 
     // 1 + 2: marketplace plugins
     let mp_base = format!("{home}/.claude/plugins/marketplaces");
@@ -1214,7 +1224,7 @@ mod tests {
         let html = render_thinking_row("deep thought");
         assert!(html.contains("<details"), "non-empty thinking must use <details>");
         assert!(html.contains("dot--assistant"), "must use gray dot");
-        assert!(html.contains("Thinking"), "label must appear");
+        assert!(html.contains("Thought for"), "label must show estimated duration");
         assert!(html.contains("deep thought"), "thinking content must appear");
     }
 

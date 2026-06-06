@@ -174,8 +174,48 @@
     window.location.hash = parts.length ? '#' + parts.join('&') : '';
   }
 
+  function clearHighlights() {
+    document.querySelectorAll('mark.search-highlight').forEach(function (mark) {
+      var parent = mark.parentNode;
+      if (!parent) return;
+      parent.replaceChild(document.createTextNode(mark.textContent), mark);
+      parent.normalize();
+    });
+  }
+
+  function highlightInNode(node, term, lowerTerm) {
+    if (node.nodeType === 3 /* TEXT_NODE */) {
+      var text = node.textContent;
+      var lowerText = text.toLowerCase();
+      var idx = lowerText.indexOf(lowerTerm);
+      if (idx === -1) return;
+      var frag = document.createDocumentFragment();
+      var last = 0;
+      while (idx !== -1) {
+        if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+        var mark = document.createElement('mark');
+        mark.className = 'search-highlight';
+        mark.textContent = text.slice(idx, idx + term.length);
+        frag.appendChild(mark);
+        last = idx + term.length;
+        idx = lowerText.indexOf(lowerTerm, last);
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+      return;
+    }
+    if (node.nodeType === 1 /* ELEMENT_NODE */) {
+      var tag = node.tagName.toLowerCase();
+      if (tag === 'script' || tag === 'style' || tag === 'mark') return;
+    }
+    Array.from(node.childNodes).forEach(function (child) {
+      highlightInNode(child, term, lowerTerm);
+    });
+  }
+
   function applySearch(term) {
     currentSearchTerm = term;
+    clearHighlights();
     var wrappers = document.querySelectorAll('.message-card-wrapper');
     var lowerTerm = term.toLowerCase();
     wrappers.forEach(function (w) {
@@ -184,6 +224,8 @@
       }
       if (lowerTerm && w.textContent.toLowerCase().indexOf(lowerTerm) === -1) {
         w.setAttribute('data-search-hidden', '');
+      } else if (lowerTerm) {
+        highlightInNode(w, term, lowerTerm);
       }
     });
     syncVisibility();
