@@ -1258,4 +1258,315 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // group_session tests
+    // -----------------------------------------------------------------------
+
+    fn parse_and_group_session(jsonl: &str) -> Vec<DisplayItem> {
+        let result = parse_reader(Cursor::new(jsonl)).unwrap();
+        let session = build_session(&result.entries);
+        group_session(&session)
+    }
+
+    #[test]
+    fn group_session_includes_system_entries() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let s1 = "00000000-0000-0000-0000-000000000001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"system","uuid":"{s1}","timestamp":"2025-06-15T10:29:00Z","sessionId":"s1"}}
+{{"type":"user","uuid":"{u1}","parentUuid":"{s1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}]}}}}"#
+        );
+        let items = parse_and_group_session(&jsonl);
+        // System (DisplayItem::Entry) + User turn + Assistant turn = 3 items
+        assert_eq!(items.len(), 3);
+        assert!(matches!(items[0], DisplayItem::Entry(_)));
+        assert!(matches!(items[1], DisplayItem::Turn(TurnGroup::User(_))));
+        assert!(matches!(items[2], DisplayItem::Turn(TurnGroup::Assistant(_))));
+    }
+
+    #[test]
+    fn group_session_summary_entry_is_standalone() {
+        let s1 = "00000000-0000-0000-0000-000000000001";
+        let jsonl = format!(
+            r#"{{"type":"summary","uuid":"{s1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","title":"Test Summary"}}"#
+        );
+        let items = parse_and_group_session(&jsonl);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(items[0], DisplayItem::Entry(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // extract_agent_result_text tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extract_agent_result_text_empty() {
+        assert_eq!(extract_agent_result_text(""), "");
+        assert_eq!(extract_agent_result_text("   "), "");
+    }
+
+    #[test]
+    fn extract_agent_result_text_very_long() {
+        let long = "x".repeat(15_000);
+        let result = extract_agent_result_text(&long);
+        // 10_000 chars + '…' (3 bytes in UTF-8) = 10_003 bytes
+        assert_eq!(result.len(), 10_003);
+        assert!(result.ends_with('\u{2026}'));
+    }
+
+    #[test]
+    fn extract_agent_result_text_normal() {
+        let result = extract_agent_result_text("  hello world  ");
+        assert_eq!(result, "hello world");
+    }
+
+    // -----------------------------------------------------------------------
+    // is_meta_text tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_meta_text_real_prompts_are_not_meta() {
+        assert!(!is_meta_text("How do I write Rust code?"));
+        assert!(!is_meta_text("Please explain lifetimes."));
+        assert!(!is_meta_text("What is the capital of France?"));
+        assert!(!is_meta_text("help me")); // "help" is not "/help"
+    }
+
+    #[test]
+    fn is_meta_text_handles_empty() {
+        assert!(!is_meta_text(""));
+        assert!(!is_meta_text("  "));
+    }
+
+    // -----------------------------------------------------------------------
+    // Image handling tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn timeline_images_become_separate_events() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"see this"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"before"}},{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"aaaa"}}}},{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"bbbb"}}}},{{"type":"text","text":"after"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // UserMessage, AssistantText("before"), Images([2 imgs]), AssistantText("after")
+        assert_eq!(events.len(), 4);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::AssistantText { .. }));
+        assert!(matches!(events[2], TimelineEvent::Images(_)));
+        assert!(matches!(events[3], TimelineEvent::AssistantText { .. }));
+        if let TimelineEvent::Images(ref imgs) = events[2] {
+            assert_eq!(imgs.len(), 2);
+        }
+    }
+
+    #[test]
+    fn timeline_trailing_images_flushed_at_end() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"img"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"text first"}},{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"cccc"}}}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // UserMessage, AssistantText, Images (trailing flush)
+        assert_eq!(events.len(), 3);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        assert!(matches!(events[1], TimelineEvent::AssistantText { .. }));
+        assert!(matches!(events[2], TimelineEvent::Images(_)));
+    }
+
+    // -----------------------------------------------------------------------
+    // Sidechain and meta filtering
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn timeline_sidechain_messages_are_skipped() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let sc1 = "550e8400-e29b-41d4-a716-446655440099";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"main thread"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","isSidechain":true,"message":{{"role":"assistant","content":[{{"type":"text","text":"sidechain"}}]}}}}
+{{"type":"assistant","uuid":"{sc1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"main response"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // Sidechain assistant is skipped, only user + main assistant
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0], TimelineEvent::UserMessage(_)));
+        if let TimelineEvent::AssistantText { ref text, .. } = events[1] {
+            assert_eq!(text, "main response");
+        } else {
+            panic!("expected AssistantText");
+        }
+    }
+
+    #[test]
+    fn timeline_system_and_summary_are_skipped() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let sys1 = "00000000-0000-0000-0000-000000000001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let sum1 = "550e8400-e29b-41d4-a716-446655440010";
+        let jsonl = format!(
+            r#"{{"type":"system","uuid":"{sys1}","timestamp":"2025-06-15T10:29:00Z","sessionId":"s1"}}
+{{"type":"user","uuid":"{u1}","parentUuid":"{sys1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"summary","uuid":"{sum1}","parentUuid":"{u1}","timestamp":"2025-06-15T11:00:00Z","sessionId":"s1","title":"Chat"}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Hello!"}}]}}}}"#
+        );
+        let events = parse_and_flatten(&jsonl);
+        // System + Summary are skipped, only user + assistant
+        assert_eq!(events.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Turn image handling
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn user_turn_includes_images() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"see this"}},{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"xyz"}}}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 1);
+        if let TurnGroup::User(ref ut) = turns[0] {
+            assert_eq!(ut.images.len(), 1);
+            assert_eq!(ut.images[0].data, "xyz");
+        } else {
+            panic!("expected User turn");
+        }
+    }
+
+    #[test]
+    fn assistant_turn_includes_images() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"check this"}},{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"imgdata"}}}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"thanks"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.images.len(), 1);
+            assert_eq!(at.images[0].data, "imgdata");
+        } else {
+            panic!("expected Assistant turn");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // has_text_content edge case
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn user_with_only_whitespace_text_is_not_text_content() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"   "}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert!(turns.is_empty());
+    }
+
+    #[test]
+    fn user_with_only_image_is_valid_text_content() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"image","source":{{"type":"base64","media_type":"image/png","data":"xyz"}}}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 1);
+        if let TurnGroup::User(ref ut) = turns[0] {
+            assert!(ut.message.is_empty());
+            assert_eq!(ut.images.len(), 1);
+        } else {
+            panic!("expected User turn");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Assistant turn with system entry interleaved
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn assistant_turn_skips_interleaved_system_entries() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let s1 = "00000000-0000-0000-0000-000000000001";
+        let a2 = "550e8400-e29b-41d4-a716-446655440003";
+        let u2 = "550e8400-e29b-41d4-a716-446655440004";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Part 1"}}]}}}}
+{{"type":"system","uuid":"{s1}","parentUuid":"{a1}","timestamp":"2025-06-15T10:30:06Z","sessionId":"s1","subtype":"turn_duration","duration_ms":500}}
+{{"type":"assistant","uuid":"{a2}","parentUuid":"{s1}","timestamp":"2025-06-15T10:30:07Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"Part 2"}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a2}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        // User, Assistant (merged: Part 1 + Part 2, system skipped), User
+        assert_eq!(turns.len(), 3);
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert!(at.message_text.contains("Part 1"));
+            assert!(at.message_text.contains("Part 2"));
+        } else {
+            panic!("expected Assistant turn");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty assistant text is filtered
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn assistant_with_empty_text_is_filtered_from_message_text() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"real"}},{{"type":"text","text":"  "}},{{"type":"text","text":""}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            // Only "real" should be in message_text; whitespace and empty are filtered.
+            assert_eq!(at.message_text, "real");
+        } else {
+            panic!("expected Assistant turn");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Tool result inside assistant message (rare, but handled)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tool_result_in_assistant_message_is_ignored() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let u2 = "550e8400-e29b-41d4-a716-446655440003";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}
+{{"type":"assistant","uuid":"{a1}","parentUuid":"{u1}","timestamp":"2025-06-15T10:30:05Z","sessionId":"s1","message":{{"role":"assistant","content":[{{"type":"text","text":"tool result inside assistant"}},{{"type":"tool_result","tool_use_id":"t1","content":"result"}}]}}}}
+{{"type":"user","uuid":"{u2}","parentUuid":"{a1}","timestamp":"2025-06-15T10:31:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"bye"}}]}}}}"#
+        );
+        let turns = parse_and_group(&jsonl);
+        assert_eq!(turns.len(), 3);
+        if let TurnGroup::Assistant(ref at) = turns[1] {
+            assert_eq!(at.message_text, "tool result inside assistant");
+            assert_eq!(at.tool_calls.len(), 0);
+            assert_eq!(at.sub_agents.len(), 0);
+        } else {
+            panic!("expected Assistant turn");
+        }
+    }
 }

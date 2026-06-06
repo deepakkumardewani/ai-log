@@ -495,4 +495,156 @@ mod tests {
             other => panic!("expected User variant, got {:?}", other),
         }
     }
+
+    #[test]
+    fn attachment_variant_deserializes_as_hook_attachment() {
+        // The "attachment" discriminator should map to HookAttachmentEntry.
+        let json = serde_json::json!({
+            "type": "attachment",
+            "uuid": "ee0e8400-e29b-41d4-a716-446655440000",
+            "parentUuid": null,
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-abc123",
+            "attachment": {"key": "value"}
+        });
+
+        let entry: TranscriptEntry = serde_json::from_value(json).unwrap();
+        assert!(matches!(entry, TranscriptEntry::HookAttachment(_)));
+    }
+
+    #[test]
+    fn common_fields_deserialize_all_optional() {
+        let json = serde_json::json!({
+            "uuid": "ff0e8400-e29b-41d4-a716-446655440000",
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-abc123",
+            "isSidechain": true,
+            "isMeta": true,
+            "agentId": "claude-opus-4-7",
+            "cwd": "/home/user",
+            "gitBranch": "feature/x",
+            "version": "2.0.0"
+        });
+
+        let cf: CommonFields = serde_json::from_value(json).unwrap();
+        assert_eq!(cf.uuid.to_string(), "ff0e8400-e29b-41d4-a716-446655440000");
+        assert!(cf.is_sidechain);
+        assert!(cf.is_meta);
+        assert_eq!(cf.agent_id.as_deref(), Some("claude-opus-4-7"));
+        assert_eq!(cf.cwd.as_deref(), Some("/home/user"));
+        assert_eq!(cf.git_branch.as_deref(), Some("feature/x"));
+        assert_eq!(cf.version.as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn system_entry_with_subtype_turn_duration() {
+        let json = serde_json::json!({
+            "type": "system",
+            "uuid": "11111111-1111-1111-1111-111111111111",
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-abc123",
+            "subtype": "turn_duration",
+            "durationMs": 1500,
+            "messageCount": 3
+        });
+
+        let entry: TranscriptEntry = serde_json::from_value(json).unwrap();
+        match entry {
+            TranscriptEntry::System(s) => {
+                assert_eq!(s.subtype.as_deref(), Some("turn_duration"));
+                assert_eq!(s.duration_ms, Some(1500));
+                assert_eq!(s.message_count, Some(3));
+            }
+            other => panic!("expected System variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn system_entry_with_stop_hook_summary() {
+        let json = serde_json::json!({
+            "type": "system",
+            "uuid": "22222222-2222-2222-2222-222222222222",
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-abc123",
+            "subtype": "stop_hook_summary",
+            "hookCount": 5,
+            "hookInfos": [{"name": "pre-commit"}],
+            "level": "warning"
+        });
+
+        let entry: TranscriptEntry = serde_json::from_value(json).unwrap();
+        match entry {
+            TranscriptEntry::System(s) => {
+                assert_eq!(s.subtype.as_deref(), Some("stop_hook_summary"));
+                assert_eq!(s.hook_count, Some(5));
+                assert_eq!(s.level.as_deref(), Some("warning"));
+            }
+            other => panic!("expected System variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn system_entry_with_content_field() {
+        let json = serde_json::json!({
+            "type": "system",
+            "uuid": "33333333-3333-3333-3333-333333333333",
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-abc123",
+            "subtype": "away_summary",
+            "content": "User stepped away for 10 minutes."
+        });
+
+        let entry: TranscriptEntry = serde_json::from_value(json).unwrap();
+        match entry {
+            TranscriptEntry::System(s) => {
+                assert_eq!(s.content.as_deref(), Some("User stepped away for 10 minutes."));
+            }
+            other => panic!("expected System variant, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn all_entry_types_have_common_fields() {
+        let base = |t: &str| -> serde_json::Value {
+            serde_json::json!({
+                "type": t,
+                "uuid": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+                "timestamp": "2025-06-15T10:30:00Z",
+                "sessionId": "s1"
+            })
+        };
+
+        let cases: Vec<(&str, serde_json::Value)> = vec![
+            ("user", {
+                let mut v = base("user");
+                v["message"] = serde_json::json!({"role": "user", "content": []});
+                v
+            }),
+            ("assistant", {
+                let mut v = base("assistant");
+                v["message"] = serde_json::json!({"role": "assistant", "content": []});
+                v
+            }),
+            ("summary", base("summary")),
+            ("system", base("system")),
+            ("queue-operation", base("queue-operation")),
+            ("hook-attachment", base("hook-attachment")),
+            ("attachment", base("attachment")),
+            ("away-summary", base("away-summary")),
+        ];
+
+        for (type_str, json) in &cases {
+            let entry: TranscriptEntry = serde_json::from_value(json.clone())
+                .unwrap_or_else(|e| panic!("failed to deserialize '{}' entry: {}", type_str, e));
+            assert_eq!(
+                entry.entry_type(),
+                match *type_str {
+                    "attachment" => "hook-attachment",
+                    other => other,
+                },
+                "entry_type() mismatch for type='{}'",
+                type_str
+            );
+        }
+    }
 }

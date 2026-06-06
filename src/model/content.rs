@@ -385,4 +385,162 @@ mod tests {
         assert!(msg.usage.is_none());
         assert!(msg.content.is_empty());
     }
+
+    #[test]
+    fn deserialize_message_with_string_content() {
+        let json = serde_json::json!({
+            "role": "user",
+            "content": "Hello, this is a plain string"
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        assert_eq!(msg.role, "user");
+        assert_eq!(msg.content.len(), 1);
+        match &msg.content[0] {
+            ContentItem::Text { text } => assert_eq!(text, "Hello, this is a plain string"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn deserialize_minimal_message() {
+        let json = serde_json::json!({
+            "role": "assistant",
+            "content": [{"type": "text", "text": "minimal"}]
+        });
+
+        let msg: Message = serde_json::from_value(json).unwrap();
+        assert_eq!(msg.role, "assistant");
+        assert!(msg.model.is_none());
+        assert!(msg.stop_reason.is_none());
+        assert!(msg.usage.is_none());
+    }
+
+    #[test]
+    fn tool_result_blocks_with_mixed_content_types() {
+        let json = serde_json::json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_mixed",
+            "content": [
+                {"type": "text", "text": "stdout output"},
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "abc"}},
+                {"type": "text", "text": "more text"}
+            ]
+        });
+
+        let item: ContentItem = serde_json::from_value(json).unwrap();
+        match item {
+            ContentItem::ToolResult { content, .. } => {
+                // Non-text items should be filtered out by as_string.
+                assert_eq!(content.as_string(), "stdout output\nmore text");
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tool_result_blocks_empty() {
+        let json = serde_json::json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_empty",
+            "content": []
+        });
+
+        let item: ContentItem = serde_json::from_value(json).unwrap();
+        match item {
+            ContentItem::ToolResult { content, .. } => {
+                assert_eq!(content.as_string(), "");
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn tool_result_is_error_defaults_to_none() {
+        let json = serde_json::json!({
+            "type": "tool_result",
+            "tool_use_id": "toolu_noerr",
+            "content": "result"
+        });
+
+        let item: ContentItem = serde_json::from_value(json).unwrap();
+        match item {
+            ContentItem::ToolResult { is_error, .. } => {
+                assert!(is_error.is_none());
+            }
+            other => panic!("expected ToolResult, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn usage_info_all_fields_present() {
+        let json = serde_json::json!({
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cache_creation_input_tokens": 200,
+            "cache_read_input_tokens": 30,
+            "service_tier": "standard"
+        });
+
+        let usage: UsageInfo = serde_json::from_value(json).unwrap();
+        assert_eq!(usage.input_tokens, Some(100));
+        assert_eq!(usage.output_tokens, Some(50));
+        assert_eq!(usage.cache_creation_input_tokens, Some(200));
+        assert_eq!(usage.cache_read_input_tokens, Some(30));
+        assert_eq!(usage.service_tier.as_deref(), Some("standard"));
+    }
+
+    #[test]
+    fn usage_info_default_all_none() {
+        let json = serde_json::json!({});
+        let usage: UsageInfo = serde_json::from_value(json).unwrap();
+        assert!(usage.input_tokens.is_none());
+        assert!(usage.output_tokens.is_none());
+        assert!(usage.cache_creation_input_tokens.is_none());
+        assert!(usage.cache_read_input_tokens.is_none());
+        assert!(usage.service_tier.is_none());
+    }
+
+    #[test]
+    fn content_item_unknown_type_deserializes_as_error() {
+        // serde(tag = "type") with unknown variant should fail.
+        let json = serde_json::json!({"type": "nonexistent_variant", "data": 42});
+        let result: Result<ContentItem, _> = serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn deserialize_content_items_all_variants() {
+        // Text
+        let text: ContentItem =
+            serde_json::from_value(serde_json::json!({"type": "text", "text": "hello"})).unwrap();
+        assert!(matches!(text, ContentItem::Text { .. }));
+
+        // Thinking
+        let think: ContentItem =
+            serde_json::from_value(serde_json::json!({"type": "thinking", "thinking": "hmm"}))
+                .unwrap();
+        assert!(matches!(think, ContentItem::Thinking { .. }));
+
+        // ToolUse
+        let tu: ContentItem = serde_json::from_value(
+            serde_json::json!({"type": "tool_use", "id": "t1", "name": "Bash", "input": {}}),
+        )
+        .unwrap();
+        assert!(matches!(tu, ContentItem::ToolUse { .. }));
+
+        // ToolResult (string content)
+        let tr: ContentItem = serde_json::from_value(
+            serde_json::json!({"type": "tool_result", "tool_use_id": "t1", "content": "done"}),
+        )
+        .unwrap();
+        assert!(matches!(tr, ContentItem::ToolResult { .. }));
+
+        // Image
+        let img: ContentItem = serde_json::from_value(
+            serde_json::json!({"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "aaaa"}}),
+        )
+        .unwrap();
+        assert!(matches!(img, ContentItem::Image { .. }));
+    }
 }

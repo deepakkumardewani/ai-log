@@ -323,4 +323,120 @@ mod tests {
         let agg = parse_and_aggregate(&jsonl);
         assert!(!agg.is_active, "old session should not be active");
     }
+
+    #[test]
+    fn empty_session_has_default_aggregate() {
+        let jsonl = "";
+        let agg = parse_and_aggregate(jsonl);
+        assert_eq!(agg.message_count, 0);
+        assert_eq!(agg.total_input_tokens, 0);
+        assert!(agg.first_timestamp.is_none());
+        assert!(agg.last_timestamp.is_none());
+        assert!(agg.tool_counts.is_empty());
+        assert!(agg.file_tree.is_empty());
+        assert!(!agg.is_active);
+    }
+
+    #[test]
+    fn unknown_entry_extracts_timestamp_from_raw_json() {
+        let jsonl = r#"{"type":"future-type","uuid":"550e8400-e29b-41d4-a716-446655440001","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","customField":42}"#;
+        let agg = parse_and_aggregate(jsonl);
+        assert!(agg.first_timestamp.is_some());
+        assert_eq!(agg.message_count, 0);
+    }
+
+    #[test]
+    fn extract_file_paths_empty_path_is_skipped() {
+        let tools = vec![
+            serde_json::json!({"type":"tool_use","id":"t1","name":"Read","input":{"file_path":""}}),
+            serde_json::json!({"type":"tool_use","id":"t2","name":"Write","input":{"file_path":"  "}}),
+        ];
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = make_tool_json(a1, &tools);
+        let agg = parse_and_aggregate(&jsonl);
+        assert!(agg.file_tree.is_empty(), "empty paths should be skipped");
+    }
+
+    #[test]
+    fn extract_file_paths_unknown_tool_name_is_skipped() {
+        let tools = vec![
+            serde_json::json!({"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls"}}),
+            serde_json::json!({"type":"tool_use","id":"t2","name":"Grep","input":{"pattern":"fn main"}}),
+        ];
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = make_tool_json(a1, &tools);
+        let agg = parse_and_aggregate(&jsonl);
+        assert!(agg.file_tree.is_empty(), "non-file tools should not create file tree entries");
+    }
+
+    #[test]
+    fn aggregate_session_id_matches_input() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"my-session-42","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}"#
+        );
+        let agg = parse_and_aggregate(&jsonl);
+        assert_eq!(agg.session_id, "my-session-42");
+    }
+
+    #[test]
+    fn single_entry_session() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"text","text":"hi"}}]}}}}"#
+        );
+        let agg = parse_and_aggregate(&jsonl);
+        assert_eq!(agg.message_count, 1);
+        assert_eq!(agg.first_timestamp, agg.last_timestamp);
+    }
+
+    #[test]
+    fn tool_result_only_message_does_not_increment_count() {
+        let u1 = "550e8400-e29b-41d4-a716-446655440001";
+        let jsonl = format!(
+            r#"{{"type":"user","uuid":"{u1}","timestamp":"2025-06-15T10:30:00Z","sessionId":"s1","message":{{"role":"user","content":[{{"type":"tool_result","tool_use_id":"t1","content":"result"}}]}}}}"#
+        );
+        let agg = parse_and_aggregate(&jsonl);
+        // tool_result-only user is still a User entry, so it counts.
+        assert_eq!(agg.message_count, 1);
+    }
+
+    #[test]
+    fn file_tree_glob_path_from_tests_dir() {
+        let tools = vec![
+            serde_json::json!({"type":"tool_use","id":"t1","name":"Glob","input":{"pattern":"*.rs","path":"tests"}}),
+            serde_json::json!({"type":"tool_use","id":"t2","name":"Glob","input":{"pattern":"*.md"}}),
+        ];
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = make_tool_json(a1, &tools);
+        let agg = parse_and_aggregate(&jsonl);
+
+        // Glob with path="tests" → dir=".", file="tests"
+        let root_files = agg.file_tree.get(".").unwrap();
+        assert!(root_files.contains(&"tests".to_string()));
+
+        // Glob without path → nothing in file_tree (path is None)
+        assert!(!agg.file_tree.contains_key("tests"));
+    }
+
+    #[test]
+    fn multi_edit_file_path_is_extracted() {
+        let tools = vec![
+            serde_json::json!({"type":"tool_use","id":"t1","name":"MultiEdit","input":{"file_path":"src/lib.rs","edits":[{"old_string":"a","new_string":"b"}]}}),
+        ];
+        let a1 = "550e8400-e29b-41d4-a716-446655440002";
+        let jsonl = make_tool_json(a1, &tools);
+        let agg = parse_and_aggregate(&jsonl);
+        let src_files = agg.file_tree.get("src").unwrap();
+        assert!(src_files.contains(&"lib.rs".to_string()));
+    }
+
+    #[test]
+    fn no_entries_produces_empty_timestamps() {
+        let jsonl = "";
+        let agg = parse_and_aggregate(jsonl);
+        assert!(agg.first_timestamp.is_none());
+        assert!(agg.last_timestamp.is_none());
+        assert!(!agg.is_active);
+    }
 }

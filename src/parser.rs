@@ -90,6 +90,17 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
+    fn make_user_entry(uuid: &str, text: &str) -> String {
+        serde_json::json!({
+            "type": "user",
+            "uuid": uuid,
+            "timestamp": "2025-06-15T10:30:00Z",
+            "sessionId": "session-1",
+            "message": {"role": "user", "content": [{"type": "text", "text": text}]}
+        })
+        .to_string()
+    }
+
     #[test]
     fn parse_empty_input() {
         let input = "";
@@ -233,5 +244,60 @@ mod tests {
 
         let result = parse_reader(Cursor::new(input)).unwrap();
         assert_eq!(result.entries.len(), 1);
+    }
+
+    #[test]
+    fn parse_file_round_trips_through_filesystem() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("weavr_test_parse_file.jsonl");
+        let json = make_user_entry("550e8400-e29b-41d4-a716-446655440000", "hello");
+        std::fs::write(&path, &json).unwrap();
+        let result = parse_file(&path).unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert!(result.warnings.is_empty());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn parse_file_nonexistent_returns_io_error() {
+        let result = parse_file(Path::new("/nonexistent/path/file.jsonl"));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn entry_with_empty_type_field_is_unknown() {
+        // An entry with an empty type field deserializes as Unknown with entry_type "".
+        let input = r#"{"type": "", "uuid": "550e8400-e29b-41d4-a716-446655440000", "timestamp": "2025-06-15T10:30:00Z", "sessionId": "s1"}"#;
+        let result = parse_reader(Cursor::new(input)).unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.entries[0].entry_type(), "");
+    }
+
+    #[test]
+    fn mixed_valid_invalid_lines_correct_counts() {
+        let good1 = make_user_entry("550e8400-e29b-41d4-a716-446655440001", "msg1");
+        let good2 = make_user_entry("550e8400-e29b-41d4-a716-446655440002", "msg2");
+        let input = format!("{}\nnot json\n\n{}\n{{\"broken", good1, good2);
+        let result = parse_reader(Cursor::new(&input)).unwrap();
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.warnings.len(), 2);
+    }
+
+    #[test]
+    fn bom_only_line_is_empty() {
+        // BOM on an otherwise empty line should be treated as blank
+        let input = "\u{FEFF}";
+        let result = parse_reader(Cursor::new(input)).unwrap();
+        assert!(result.entries.is_empty());
+        assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn parse_warning_displays_line_number() {
+        let input = "line 1 is bad json\n";
+        let result = parse_reader(Cursor::new(input)).unwrap();
+        assert_eq!(result.warnings.len(), 1);
+        assert_eq!(result.warnings[0].line, 1);
+        assert!(result.warnings[0].message.contains("line 1"));
     }
 }

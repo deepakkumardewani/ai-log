@@ -339,158 +339,45 @@ impl ToolInput {
 
     /// Parse the tool input JSON based on the tool name.
     pub fn from_name_and_input(name: &str, input: serde_json::Value) -> Self {
-        match name {
-            "Bash" => serde_json::from_value::<BashInput>(input.clone())
-                .map(Self::Bash)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Read" => serde_json::from_value::<ReadInput>(input.clone())
-                .map(Self::Read)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Write" => serde_json::from_value::<WriteInput>(input.clone())
-                .map(Self::Write)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Edit" => serde_json::from_value::<EditInput>(input.clone())
-                .map(Self::Edit)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "MultiEdit" => serde_json::from_value::<MultiEditInput>(input.clone())
-                .map(Self::MultiEdit)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Glob" => serde_json::from_value::<GlobInput>(input.clone())
-                .map(Self::Glob)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Grep" => serde_json::from_value::<GrepInput>(input.clone())
-                .map(Self::Grep)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "TodoWrite" => serde_json::from_value::<TodoWriteInput>(input.clone())
-                .map(Self::TodoWrite)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "AskUserQuestion" | "ask_user_question" => {
-                serde_json::from_value::<AskUserQuestionInput>(input.clone())
-                    .map(Self::AskUserQuestion)
-                    .unwrap_or_else(|_| Self::Generic {
+        // Helper macro to keep the match arms readable. `clone` is necessary
+        // because serde_json::from_value consumes the Value; on failure we
+        // still need the original for the Generic fallback.
+        macro_rules! dispatch {
+            ($ty:ty, $variant:ident) => {
+                serde_json::from_value::<$ty>(input.clone()).map(Self::$variant).unwrap_or_else(
+                    |_| Self::Generic {
                         name: name.to_string(),
                         input,
-                    })
+                    },
+                )
+            };
+        }
+
+        match name {
+            "Bash" => dispatch!(BashInput, Bash),
+            "Read" => dispatch!(ReadInput, Read),
+            "Write" => dispatch!(WriteInput, Write),
+            "Edit" => dispatch!(EditInput, Edit),
+            "MultiEdit" => dispatch!(MultiEditInput, MultiEdit),
+            "Glob" => dispatch!(GlobInput, Glob),
+            "Grep" => dispatch!(GrepInput, Grep),
+            "TodoWrite" => dispatch!(TodoWriteInput, TodoWrite),
+            "AskUserQuestion" | "ask_user_question" => {
+                dispatch!(AskUserQuestionInput, AskUserQuestion)
             }
-
-            "WebSearch" => serde_json::from_value::<WebSearchInput>(input.clone())
-                .map(Self::WebSearch)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "WebFetch" => serde_json::from_value::<WebFetchInput>(input.clone())
-                .map(Self::WebFetch)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "ScheduleWakeup" => serde_json::from_value::<ScheduleWakeupInput>(input.clone())
-                .map(Self::ScheduleWakeup)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "CronCreate" => serde_json::from_value::<CronCreateInput>(input.clone())
-                .map(Self::CronCreate)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "CronDelete" => serde_json::from_value::<CronDeleteInput>(input.clone())
-                .map(Self::CronDelete)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "CronList" => serde_json::from_value::<CronListInput>(input.clone())
-                .map(Self::CronList)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
+            "WebSearch" => dispatch!(WebSearchInput, WebSearch),
+            "WebFetch" => dispatch!(WebFetchInput, WebFetch),
+            "ScheduleWakeup" => dispatch!(ScheduleWakeupInput, ScheduleWakeup),
+            "CronCreate" => dispatch!(CronCreateInput, CronCreate),
+            "CronDelete" => dispatch!(CronDeleteInput, CronDelete),
+            "CronList" => dispatch!(CronListInput, CronList),
             "Task" | "Agent" | "TaskCreate" | "TaskUpdate" | "TaskOutput" | "TaskList"
-            | "TaskStop" => serde_json::from_value::<TaskInput>(input.clone())
-                .map(Self::Task)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "TeamCreate" | "TeamDelete" => serde_json::from_value::<TeamInput>(input.clone())
-                .map(Self::Team)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "SendMessage" => serde_json::from_value::<SendMessageInput>(input.clone())
-                .map(Self::SendMessage)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Skill" => serde_json::from_value::<SkillInput>(input.clone())
-                .map(Self::Skill)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "ExitPlanMode" => serde_json::from_value::<ExitPlanModeInput>(input.clone())
-                .map(Self::ExitPlanMode)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            "Monitor" => serde_json::from_value::<MonitorInput>(input.clone())
-                .map(Self::Monitor)
-                .unwrap_or_else(|_| Self::Generic {
-                    name: name.to_string(),
-                    input,
-                }),
-
-            // Unknown tool → generic fallback.
+            | "TaskStop" => dispatch!(TaskInput, Task),
+            "TeamCreate" | "TeamDelete" => dispatch!(TeamInput, Team),
+            "SendMessage" => dispatch!(SendMessageInput, SendMessage),
+            "Skill" => dispatch!(SkillInput, Skill),
+            "ExitPlanMode" => dispatch!(ExitPlanModeInput, ExitPlanMode),
+            "Monitor" => dispatch!(MonitorInput, Monitor),
             _ => Self::Generic {
                 name: name.to_string(),
                 input,
@@ -752,5 +639,305 @@ mod tests {
                 name
             );
         }
+    }
+
+    #[test]
+    fn from_content_item_with_non_tool_use_returns_none() {
+        let text = ContentItem::Text {
+            text: "hello".into(),
+        };
+        assert!(ToolInput::from_content_item(&text).is_none());
+
+        let thinking = ContentItem::Thinking {
+            thinking: "hmm".into(),
+            signature: None,
+        };
+        assert!(ToolInput::from_content_item(&thinking).is_none());
+    }
+
+    #[test]
+    fn malformed_input_falls_through_to_generic() {
+        // "Bash" tool with missing required "command" field should fall to Generic.
+        let item = tool_use("Bash", serde_json::json!({"not_command": "x"}));
+        let ti = ToolInput::from_content_item(&item).unwrap();
+        assert!(matches!(ti, ToolInput::Generic { .. }));
+
+        // "Read" tool with missing required "file_path" field.
+        let item = tool_use("Read", serde_json::json!({"not_file_path": "x"}));
+        let ti = ToolInput::from_content_item(&item).unwrap();
+        assert!(matches!(ti, ToolInput::Generic { .. }));
+    }
+
+    #[test]
+    fn display_name_all_variants() {
+        let cases: Vec<(ToolInput, &str)> = vec![
+            (
+                ToolInput::Bash(BashInput {
+                    command: "ls".into(),
+                    description: None,
+                    run_in_background: None,
+                    timeout: None,
+                    dangerously_disable_sandbox: None,
+                }),
+                "Bash",
+            ),
+            (
+                ToolInput::Read(ReadInput {
+                    file_path: "f".into(),
+                    offset: None,
+                    limit: None,
+                    pages: None,
+                }),
+                "Read",
+            ),
+            (
+                ToolInput::Write(WriteInput {
+                    file_path: "f".into(),
+                    content: "c".into(),
+                }),
+                "Write",
+            ),
+            (
+                ToolInput::Edit(EditInput {
+                    file_path: "f".into(),
+                    old_string: "a".into(),
+                    new_string: "b".into(),
+                    replace_all: false,
+                }),
+                "Edit",
+            ),
+            (
+                ToolInput::MultiEdit(MultiEditInput {
+                    file_path: "f".into(),
+                    edits: vec![],
+                }),
+                "MultiEdit",
+            ),
+            (
+                ToolInput::Glob(GlobInput {
+                    pattern: "*.rs".into(),
+                    path: None,
+                }),
+                "Glob",
+            ),
+            (
+                ToolInput::Grep(GrepInput {
+                    pattern: "fn".into(),
+                    path: None,
+                    include: None,
+                }),
+                "Grep",
+            ),
+            (ToolInput::TodoWrite(TodoWriteInput { todos: vec![] }), "TodoWrite"),
+            (
+                ToolInput::AskUserQuestion(AskUserQuestionInput {
+                    questions: vec![],
+                    answers: None,
+                }),
+                "AskUserQuestion",
+            ),
+            (
+                ToolInput::WebSearch(WebSearchInput {
+                    query: "rust".into(),
+                    allowed_domains: None,
+                    blocked_domains: None,
+                }),
+                "WebSearch",
+            ),
+            (
+                ToolInput::WebFetch(WebFetchInput {
+                    url: "https://example.com".into(),
+                    prompt: None,
+                }),
+                "WebFetch",
+            ),
+            (
+                ToolInput::ScheduleWakeup(ScheduleWakeupInput {
+                    delay_seconds: 60,
+                    reason: "test".into(),
+                    prompt: None,
+                }),
+                "ScheduleWakeup",
+            ),
+            (
+                ToolInput::CronCreate(CronCreateInput {
+                    cron: "* * * * *".into(),
+                    prompt: "test".into(),
+                    recurring: false,
+                    durable: false,
+                }),
+                "CronCreate",
+            ),
+            (ToolInput::CronDelete(CronDeleteInput { id: "abc".into() }), "CronDelete"),
+            (ToolInput::CronList(CronListInput {}), "CronList"),
+            (
+                ToolInput::Monitor(MonitorInput {
+                    description: "w".into(),
+                    timeout_ms: 1000,
+                    persistent: false,
+                    command: "ls".into(),
+                }),
+                "Monitor",
+            ),
+            (
+                ToolInput::Task(TaskInput {
+                    description: Some("d".into()),
+                    prompt: None,
+                    subagent_type: None,
+                    model: None,
+                    task_id: None,
+                    subject: None,
+                    status: None,
+                    extra: serde_json::Value::Object(Default::default()),
+                }),
+                "Task",
+            ),
+            (
+                ToolInput::Team(TeamInput {
+                    name: Some("t".into()),
+                    description: None,
+                    extra: serde_json::Value::Object(Default::default()),
+                }),
+                "Team",
+            ),
+            (
+                ToolInput::SendMessage(SendMessageInput {
+                    message: "hi".into(),
+                    agent_id: None,
+                }),
+                "SendMessage",
+            ),
+            (
+                ToolInput::Skill(SkillInput {
+                    skill: "build".into(),
+                    args: None,
+                }),
+                "Skill",
+            ),
+            (
+                ToolInput::ExitPlanMode(ExitPlanModeInput {
+                    allowed_prompts: None,
+                }),
+                "ExitPlanMode",
+            ),
+            (
+                ToolInput::Generic {
+                    name: "CustomTool".into(),
+                    input: serde_json::json!({}),
+                },
+                "CustomTool",
+            ),
+        ];
+
+        for (ti, expected_name) in &cases {
+            assert_eq!(ti.display_name(), *expected_name, "display_name mismatch for variant");
+        }
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_bash_all_fields() {
+        let json = serde_json::json!({
+            "command": "cargo build",
+            "description": "Build the project",
+            "run_in_background": true,
+            "timeout": 30000,
+            "dangerously_disable_sandbox": false
+        });
+        let bi: BashInput = serde_json::from_value(json).unwrap();
+        assert_eq!(bi.command, "cargo build");
+        assert_eq!(bi.description.as_deref(), Some("Build the project"));
+        assert_eq!(bi.run_in_background, Some(true));
+        assert_eq!(bi.timeout, Some(30000));
+        assert_eq!(bi.dangerously_disable_sandbox, Some(false));
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_read_with_pages() {
+        let json = serde_json::json!({
+            "file_path": "doc.pdf",
+            "pages": "1-5"
+        });
+        let ri: ReadInput = serde_json::from_value(json).unwrap();
+        assert_eq!(ri.file_path, "doc.pdf");
+        assert_eq!(ri.pages.as_deref(), Some("1-5"));
+        assert!(ri.offset.is_none());
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_web_search_with_domains() {
+        let json = serde_json::json!({
+            "query": "rust lang",
+            "allowed_domains": ["docs.rs", "crates.io"],
+            "blocked_domains": ["example.com"]
+        });
+        let ws: WebSearchInput = serde_json::from_value(json).unwrap();
+        assert_eq!(ws.query, "rust lang");
+        assert_eq!(
+            ws.allowed_domains.as_deref(),
+            Some(vec!["docs.rs".to_string(), "crates.io".to_string()]).as_deref()
+        );
+        assert_eq!(ws.blocked_domains.as_deref(), Some(vec!["example.com".to_string()]).as_deref());
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_ask_user_question() {
+        let json = serde_json::json!({
+            "questions": [
+                {
+                    "question": "What is your preference?",
+                    "header": "Preference",
+                    "options": [
+                        {"label": "Option A", "description": "First option"},
+                        {"label": "Option B", "description": "Second option"}
+                    ],
+                    "multi_select": true
+                }
+            ],
+            "answers": {"0": "Option A"}
+        });
+        let aq: AskUserQuestionInput = serde_json::from_value(json).unwrap();
+        assert_eq!(aq.questions.len(), 1);
+        assert_eq!(aq.questions[0].header, "Preference");
+        assert!(aq.questions[0].multi_select);
+        assert_eq!(aq.questions[0].options.len(), 2);
+        assert!(aq.answers.is_some());
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_task_with_extra_fields() {
+        let json = serde_json::json!({
+            "description": "search codebase",
+            "subagent_type": "Explore",
+            "model": "sonnet",
+            "run_in_background": true
+        });
+        let ti: TaskInput = serde_json::from_value(json).unwrap();
+        assert_eq!(ti.description.as_deref(), Some("search codebase"));
+        assert_eq!(ti.subagent_type.as_deref(), Some("Explore"));
+        assert_eq!(ti.model.as_deref(), Some("sonnet"));
+        assert_eq!(ti.extra["run_in_background"], true);
+    }
+
+    #[test]
+    fn deserialize_tool_input_structs_schedule_wakeup() {
+        let json = serde_json::json!({
+            "delay_seconds": 120,
+            "reason": "check back in 2 minutes",
+            "prompt": "continue the task"
+        });
+        let sw: ScheduleWakeupInput = serde_json::from_value(json).unwrap();
+        assert_eq!(sw.delay_seconds, 120);
+        assert_eq!(sw.reason, "check back in 2 minutes");
+        assert_eq!(sw.prompt.as_deref(), Some("continue the task"));
+    }
+
+    #[test]
+    fn from_name_and_input_direct_call() {
+        // Test from_name_and_input directly (not through ContentItem).
+        let ti = ToolInput::from_name_and_input("Bash", serde_json::json!({"command": "ls"}));
+        assert!(matches!(ti, ToolInput::Bash(_)));
+
+        let ti = ToolInput::from_name_and_input("FutureTool", serde_json::json!({"x": 1}));
+        assert!(matches!(ti, ToolInput::Generic { .. }));
     }
 }
