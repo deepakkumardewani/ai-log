@@ -7,7 +7,7 @@ description = "Claude Code transcript exporter — beautiful, self-contained HTM
 license = "MIT"
 repository = "https://github.com/deepakkumardewani/weavr"
 readme = "README.md"
-keywords = ["claude", "code", "transcript", "exporter", "html", "markdown", "jsonl"]
+keywords = ["claude-code", "transcript", "exporter", "html", "markdown"]
 categories = ["command-line-utilities", "development-tools", "text-processing"]
 homepage = "https://github.com/deepakkumardewani/weavr"
 # Keep the published crate lean — ship only what's needed to build + run.
