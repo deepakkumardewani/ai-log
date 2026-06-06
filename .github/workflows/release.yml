@@ -1,6 +1,6 @@
 # weavr — GitHub Release workflow
 # Triggered by pushing a version tag: v0.2.0, v1.0.0, etc.
-# Builds macOS (aarch64 + x86_64) and Linux (x86_64) binaries,
+# Builds macOS (aarch64) and Linux (x86_64) binaries,
 # creates a GitHub Release with archives + checksums + installer scripts.
 
 name: Release
@@ -22,8 +22,6 @@ jobs:
         include:
           - os: macos-latest
             target: aarch64-apple-darwin
-          - os: macos-13
-            target: x86_64-apple-darwin
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
 

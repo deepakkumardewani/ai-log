@@ -101,8 +101,9 @@ Prebuilt binaries for each platform are published on the [GitHub Releases](https
 | Platform | Target triple |
 |----------|--------------|
 | macOS (Apple Silicon) | `aarch64-apple-darwin` |
-| macOS (Intel) | `x86_64-apple-darwin` |
 | Linux (x86_64) | `x86_64-unknown-linux-gnu` |
+
+> Intel macOS has no prebuilt binary — install via `cargo install weavr`, or run the Apple Silicon build under Rosetta 2.
 
 ### From source
 
