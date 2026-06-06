@@ -22,21 +22,24 @@
       <div class="header-separator"></div>
       <div class="header-meta">
         <a href="../index.html" class="header-back-link">&larr; All Projects</a>
-        <span class="header-meta-title">{{ display_name }}</span>
-        <div class="header-meta-stats">
-          <span>{{ session_count }} sessions</span>
-          <span>&#x2022;</span>
-          <span>{{ message_count }} messages</span>
-          <span>&#x2022;</span>
-          <span>{{ token_total }} tokens</span>
+        <div class="header-meta-project">
+          <span class="header-meta-title">{{ display_name }}</span>
+          <span class="header-meta-path" title="{{ project_name }}">{{ project_name }}</span>
         </div>
       </div>
     </div>
     <div class="header-actions">
+      <div class="header-session-stats">
+        <span>{{ session_count }} sessions</span>
+        <span class="header-stat-sep">&#x2022;</span>
+        <span>{{ message_count }} messages</span>
+        <span class="header-stat-sep">&#x2022;</span>
+        <span>{{ token_total }} tokens</span>
+      </div>
+      <div class="header-separator"></div>
       {% include "components/theme_toggle.html" %}
     </div>
   </header>
-  <div class="project-header-path" title="{{ project_name }}">{{ project_name }}</div>
 
   {% set search_placeholder = "Search sessions..." %}
   {% set show_view_switcher = false %}
@@ -79,9 +82,7 @@
     <p class="empty-state-text">No sessions match your filters.</p>
   </div>
 
-  <footer class="index-footer">
-    Rendered by ailog &middot; v{{ version }}
-  </footer>
+
 </div>
 <script>
 {{ index_js|safe }}

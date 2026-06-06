@@ -24,8 +24,7 @@
       </div>
       <div class="header-separator"></div>
       <div class="header-meta">
-        <span class="header-meta-title">AI Code Sessions</span>
-        <div class="header-meta-stats">
+        <div class="header-session-stats">
           <span>{{ total_projects }} projects</span>
           <span>&#x2022;</span>
           <span>{{ total_sessions }} sessions</span>
@@ -83,9 +82,7 @@
     <p class="empty-state-text">No projects match your filters.</p>
   </div>
 
-  <footer class="index-footer">
-    Rendered by ailog &middot; v{{ version }}
-  </footer>
+
 </div>
 <script>
 {{ index_js|safe }}
