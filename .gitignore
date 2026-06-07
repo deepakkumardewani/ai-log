@@ -33,3 +33,6 @@ tests/fixtures/cclog-cache.db
 
 
 .cargo/
+
+
+agent_docs/
