@@ -4,14 +4,33 @@ A fast, self-contained Rust CLI that converts Claude Code transcript JSONL files
 
 `weavr` is a Rust reimplementation of [claude-code-log](https://github.com/daaain/claude-code-log), focused on speed, zero-dependency output artefacts, and a clean Material 3 design.
 
+## Navigation
+
+- [Why weavr?](#why-weavr)
+- [Quickstart](#quickstart)
+- [Two modes](#two-modes)
+- [Key Features](#key-features)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [Basic export](#basic-export)
+  - [Markdown export](#markdown-export)
+  - [All projects (batch)](#all-projects-batch)
+  - [Filtering](#filtering)
+  - [Pagination](#pagination)
+  - [Cache & output control](#cache--output-control)
+- [Output Formats](#output-formats)
+- [Performance](#performance)
+- [Roadmap](#roadmap)
+- [License](#license)
+
 ## Why weavr?
 
-The excellent [claude-code-log](https://github.com/daaain/claude-code-log) proved how useful it is to turn raw Claude Code transcripts into something you can actually read. weavr started as a personal itch with that workflow and grew into a ground-up rewrite around two goals:
+[claude-code-log](https://github.com/daaain/claude-code-log) proved how useful it is to turn raw Claude Code transcripts into readable artefacts. weavr is a ground-up Rust rewrite around two goals:
 
-- **Speed.** Transcripts get large fast. A Python tool re-parses and re-renders the whole archive on every run; weavr is a single native binary with a single-pass JSONL parser and an in-memory session DAG, plus a SQLite cache for incremental rebuilds. In practice it exports **18–46× faster** (see [Performance](#performance)) — fast enough to regenerate your entire history in the time it takes to alt-tab.
-- **Design.** weavr ships a deliberate Material 3 light/dark theme with a flat dot-timeline that reads like a chronological event stream, rich inline tool rendering (Bash IN/OUT, Read/Edit/Write diffs, modals for Skill/Agent), and **fully self-contained output** — every HTML file embeds its fonts, CSS, and JS so nothing ever phones home. A CI gate rejects any `http(s)://` URL in the output.
+- **Speed.** Single-pass JSONL parser, in-memory session DAG, and SQLite cache for incremental rebuilds. **18–46× faster** than the Python tool (see [Performance](#performance)).
+- **Design.** Material 3 light/dark theme, flat dot-timeline, rich inline tool rendering (Bash IN/OUT, diffs, modals for Skill/Agent). Every HTML file is **fully self-contained** — fonts, CSS, JS all embedded. A CI gate rejects any external URL.
 
-It's also trivially installable as a single binary (`brew`, `cargo binstall`, `cargo install`, shell installer) with built-in `self-update` — no Python runtime, no virtualenv.
+Single static binary via `brew`, `cargo binstall`, or `cargo install`, with built-in `self-update`. No Python runtime needed.
 
 ### weavr vs. claude-code-log
 
@@ -19,7 +38,7 @@ It's also trivially installable as a single binary (`brew`, `cargo binstall`, `c
 |---|---|---|
 | Speed (all projects) | **~1.3 s** | ~24 s |
 | Speed (single session) | **~28 ms** | ~1.3 s |
-| Distribution | single static binary (brew / binstall / cargo / shell) | `uvx` / `pip` (needs Python) |
+| Distribution | single static binary (brew / binstall / cargo) | `uvx` / `pip` (needs Python) |
 | Self-contained output | ✅ zero external URLs (CI-enforced) | partial |
 | Incremental rebuilds | ✅ SQLite cache | ⚠️ re-renders each run |
 | Theme | Material 3 light/dark, dot-timeline | minimalist HTML |
@@ -35,7 +54,7 @@ It's also trivially installable as a single binary (`brew`, `cargo binstall`, `c
 | Image rendering | ⏳ planned | ✅ |
 | Windows | ⏳ planned | ✅ |
 
-Both tools share the same JSONL input format and the `--detail` / `--compact` philosophy — weavr trades a couple of claude-code-log's richer browsing features (TUI, zoomable timeline) for raw speed, a self-contained artefact, and a single-binary install. If you live in the terminal and want an interactive TUI today, claude-code-log is great. If you want the fastest possible export and offline-portable HTML, reach for weavr.
+Both tools share the same JSONL input format. If you live in the terminal and want an interactive TUI today, claude-code-log is great. If you want the fastest possible export and offline-portable HTML, reach for weavr.
 
 ## Quickstart
 
@@ -43,34 +62,41 @@ Both tools share the same JSONL input format and the `--detail` / `--compact` ph
 weavr -i ~/.claude/projects/my-project/session.jsonl
 ```
 
-Opens (or writes) a fully self-contained `session.html` — no CDN URLs, no external fonts, no JavaScript dependencies.
+Writes a fully self-contained `session.html` — no CDN URLs, no external fonts, no JavaScript dependencies.
+
+## Two modes
+
+weavr has two distinct operating modes:
+
+| Mode | Command | Produces |
+|------|---------|----------|
+| **Batch** | `weavr` / `weavr --all-projects` | HTML index + per-session + combined pages |
+| **Single-file** | `weavr export <INPUT>` | one file (HTML or Markdown) |
+
+**Batch mode** walks `~/.claude/projects/` and generates a complete static site. It's HTML-only — no `--format` / `--detail` / `--compact` flags here.
+
+**Single-file mode** (`weavr export`) gives you full control over format, detail level, and compactness. All format-related flags live on the `export` subcommand:
+
+```sh
+weavr export --help   # see all export options
+```
+
+The `-i` shorthand is a convenience alias for `export <INPUT>` (HTML only, full detail).
 
 ## Key Features
 
-- **Self-Contained HTML**: Every output file embeds fonts, CSS tokens, and assets inline — nothing phones home
-- **Light/Dark Themes**: Clean, minimalist UI using warm-neutral design tokens; dark by default with a toggleable light theme persisted to localStorage
-- **Markdown Export**: Lightweight portable alternative to HTML, compatible with GitHub, GitLab, and LLM context windows
-- **Detail Levels**: `--detail full|high|low|minimal|user-only` — filter verbosity from everything down to user prompts only
-- **Compact Mode**: `--compact` strips timestamps and horizontal rules; pairs with `--detail low` for feeding past sessions to an LLM
-- **Flat Dot-Timeline**: Conversation rendered as a chronological event stream — user messages as muted blocks, assistant text and thinking as gray dot-rows, tool calls as green dot-rows
-- **Rich Tool Rendering**: Bash IN/OUT sections, Read filename → file-contents modal, Edit/Write/MultiEdit unified diff with intra-line word highlights, Skill → modal, Agent rows with IN prompt
-- **Thinking Block Support**: Inline-expand thinking rows; empty thinking shown as a disabled pill
-- **Token Usage Tracking**: Per-message and per-session input/output token counts
-- **Zero-Config**: Sensible defaults — just point it at a JSONL file
-- **Multi-Project Export**: Export all your Claude Code projects at once with `weavr --all-projects`, generating a static navigable site with master index + per-project pages
-- **SQLite Cache**: Session metadata cached for fast incremental rebuilds; `--clear-cache` and `--no-cache` flags for control
-- **Interactive HTML Output**: Client-side message-type filter chips with URL-hash persistence, in-page search with 150ms debounce, and a light/dark theme toggle persisted to localStorage. Index page includes project search, date range filter with presets, and card/list view toggle with localStorage persistence
-- **Fast**: Single-pass JSONL parser with a session DAG built in memory; typical sessions export in milliseconds
+- **Self-Contained HTML** — fonts, CSS tokens, assets all embedded inline; CI-enforced
+- **Light/Dark Themes** — Material 3 warm-neutral tokens; dark by default, toggle persisted to localStorage
+- **Markdown Export** — `--format md` with five `--detail` levels and `--compact` mode
+- **Flat Dot-Timeline** — chronological event stream: user messages, assistant text, thinking, tool calls
+- **Rich Tool Rendering** — Bash IN/OUT, Read/Edit/Write diffs with intra-line highlights, Skill/Agent modals
+- **Token Usage Tracking** — per-message and per-session input/output/cache tokens
+- **Multi-Project Export** — `--all-projects` generates a navigable static site with master index
+- **SQLite Cache** — fast incremental rebuilds; `--clear-cache` / `--no-cache` for control
+- **Interactive HTML** — filter chips, in-page search (150ms debounce), theme toggle, project search, card/list view
+- **Zero-Config** — sensible defaults; point at a JSONL file and go
 
 ## Installation
-
-### Via shell installer (macOS, Linux)
-
-```sh
-curl --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/deepakkumardewani/weavr/main/install.sh | sh
-```
-
-Downloads the latest prebuilt binary for your platform from GitHub Releases.
 
 ### Via Homebrew (macOS)
 
@@ -84,7 +110,7 @@ brew install deepakkumardewani/weavr/weavr
 cargo binstall weavr
 ```
 
-Fetches the latest prebuilt binary from GitHub Releases — no compilation needed.
+Fetches the latest prebuilt binary from GitHub Releases. Falls back to building from source if no matching binary is found.
 
 ### Via cargo install
 
@@ -96,7 +122,7 @@ Builds from source on crates.io. Requires Rust 1.80+.
 
 ### Direct download
 
-Prebuilt binaries for each platform are published on the [GitHub Releases](https://github.com/deepakkumardewani/weavr/releases) page. Download the `.tar.gz` for your platform, extract, and place the `weavr` binary on your `PATH`.
+Prebuilt binaries are on the [GitHub Releases](https://github.com/deepakkumardewani/weavr/releases) page. Download the `.tar.gz` for your platform, extract, and place `weavr` on your `PATH`.
 
 | Platform | Target triple |
 |----------|--------------|
@@ -122,7 +148,7 @@ weavr self-update       # update to the latest GitHub Release
 
 A passive notice is printed when a newer version is available (throttled to once per 24 h). Set `WEAVR_NO_UPDATE_CHECK=1` to disable.
 
-Package-manager installs (brew, cargo install) should use their native update commands:
+Package-manager installs should use their native update commands:
 
 ```sh
 brew upgrade weavr                  # Homebrew
@@ -132,12 +158,12 @@ cargo binstall --force weavr        # cargo-binstall
 
 ### Requirements
 
-- Rust 1.80+ (for source builds only; prebuilt binaries have no dependencies)
+- Rust 1.80+ (source builds only; prebuilt binaries have no dependencies)
 - Optional: Tailwind CLI (for rebuilding CSS tokens; a pre-built fallback is embedded)
 
 ## Usage
 
-### Export a session to HTML (default)
+### Basic export
 
 ```sh
 weavr export session.jsonl
@@ -148,20 +174,39 @@ weavr export session.jsonl
 weavr export session.jsonl -o /tmp/review.html --open-browser
 ```
 
-### Shorthand with `-i`
-
 ```sh
 weavr -i session.jsonl
+# shorthand — equivalent to `export <INPUT>` (HTML only, full detail)
 ```
 
-### Export to Markdown
+```sh
+weavr -i session.jsonl --output-dir ~/desktop
+# places session.html in ~/desktop/
+```
+
+`--open-browser` is a global flag — it works with all modes (`export`, `-i`, and `--all-projects`).
+
+**Example output:**
+
+```
+Exported → ~/desktop/session.html
+
+  Format:    HTML
+  Messages:  106
+  Tokens:    43,950 in / 110,380 out
+  Took:      8ms
+```
+
+Token counts display with thousands separators and switch to `M` notation above one million (e.g. `1.23M`, `12.5M`).
+
+### Markdown export
 
 ```sh
 weavr export session.jsonl --format md
 # writes session.md
 ```
 
-### Detail levels
+**Detail levels:**
 
 ```sh
 weavr export session.jsonl --format md --detail full       # everything (default)
@@ -171,8 +216,6 @@ weavr export session.jsonl --format md --detail minimal    # user + assistant te
 weavr export session.jsonl --format md --detail user-only  # user prompts only
 ```
 
-`--detail` levels at a glance (smallest → largest output):
-
 | Level | Includes |
 |-------|----------|
 | `user-only` | User prompts only — good input for an agent building a requirements doc |
@@ -181,15 +224,15 @@ weavr export session.jsonl --format md --detail user-only  # user prompts only
 | `high` | + All tool calls; drops thinking blocks and system metadata |
 | `full` | Everything — thinking, system entries, all tool calls (default) |
 
-### Feeding a past session to an LLM
+**Feeding a past session to an LLM:**
 
 ```sh
 weavr export session.jsonl --format md --detail low --compact -o context.md
 ```
 
-`--compact` merges repeated same-type headings so runs of assistant turns share one `### Assistant` instead of repeating it for each message — significantly reduces token count.
+`--compact` strips timestamps, horizontal rules, and merges repeated same-type headings — significantly reducing token count.
 
-### Export all projects
+### All projects (batch)
 
 ```sh
 weavr --all-projects
@@ -203,14 +246,52 @@ weavr --all-projects
 weavr --all-projects --projects-dir /path/to/projects --output-dir ./out
 ```
 
-### Filter by session ID
-
 ```sh
-weavr --all-projects --session-id 6162c547
-# exports only the matching session (prefix match)
+weavr --all-projects --no-individual-sessions
+# skip per-session HTML; only index + combined pages
 ```
 
-### Date-filtered export
+```sh
+weavr --all-projects --open-browser
+# opens index.html in the default browser when done
+```
+
+**Example output:**
+
+```
+Exporting 160 sessions across 10 projects → ./weavr-out
+
+  ✓ my-project    49 sessions
+  ✓ other-app     13 sessions
+  ✓ index.html
+
+Done: 162 sessions
+
+  Format:    HTML (full)
+  Messages:  26,289
+  Tokens:    17.7M in / 11.1M out
+  Took:      673ms
+```
+
+### Filtering
+
+<details><summary>Date-range, project, and session filtering</summary>
+
+**By project:**
+
+```sh
+weavr --all-projects --project cclog
+# exports only the project whose name contains "cclog" (case-insensitive)
+```
+
+```sh
+weavr --all-projects --project addy --output-dir ./out --open-browser
+# partial match — "addy" matches "addyosmaniskills", "addy-osmani", etc.
+```
+
+`--project` does a case-insensitive substring match against both the internal directory name and the display name. Multiple projects can match. Exits with an error if nothing matches.
+
+**By date:**
 
 ```sh
 weavr export session.jsonl --from-date yesterday --to-date today
@@ -219,52 +300,47 @@ weavr --all-projects --from-date 2025-06-01 --to-date 2025-06-30
 
 Accepts: `today`, `yesterday`, `last week`, `last month`, and ISO dates (`YYYY-MM-DD`). Sessions whose timestamp range doesn't overlap the filter window are skipped.
 
-### Paginated output
+**By session ID:**
+
+```sh
+weavr --all-projects --session-id 6162c547
+# exports only the matching session (prefix match)
+```
+
+</details>
+
+### Pagination
+
+<details><summary>Split long sessions across multiple HTML files</summary>
 
 ```sh
 weavr export session.jsonl --page-size 50
 # splits into session-page-1.html, session-page-2.html, ...
 ```
 
-Long sessions can be split across multiple HTML files with `--page-size N` (messages per page). The first page includes the full chrome; subsequent pages are content-only.
+`--page-size N` sets messages per page. The first page includes the full chrome; subsequent pages are content-only.
 
-### Wipe output directory
+</details>
 
-```sh
-weavr --all-projects --clear-output   # delete output dir before writing
-```
+### Cache & output control
 
-### Cache control
+<details><summary>Cache, output directory, and debug flags</summary>
 
 ```sh
 weavr --all-projects --no-cache      # skip cache entirely
 weavr --all-projects --clear-cache   # drop and rebuild cache
 ```
 
-### Design verification stub
-
 ```sh
-weavr stub -o design-review.html    # emit a stub transcript for design review
+weavr --all-projects --clear-output   # delete output dir before writing
 ```
-
-### Debug logging
 
 ```sh
 weavr --debug export session.jsonl   # enable tracing output
 weavr --debug --all-projects         # verbose logging for all-projects mode
 ```
 
-### Combined pages only (skip per-session HTML)
-
-```sh
-weavr --all-projects --no-individual-sessions
-```
-
-### Open in browser after export
-
-```sh
-weavr export session.jsonl --open-browser
-```
+</details>
 
 ## Output Formats
 
@@ -281,7 +357,7 @@ weavr export session.jsonl --open-browser
 
 - GitHub-Flavored Markdown compatible
 - Tool calls collapse to fenced code blocks with the tool name and key parameters
-- Diffs rendered as `\`\`\`diff` blocks with unified `+/-` hunks
+- Diffs rendered as ` ```diff ` blocks with unified `+/-` hunks
 - `--compact` and `--detail` work orthogonally
 
 ## Performance
@@ -294,13 +370,13 @@ Benchmarked with [`hyperfine`](https://github.com/sharkdp/hyperfine) (warmup + m
 | Single project (42 sessions) | **466 ms** | 9.68 s | **20.8×** |
 | Single session (19 MB, ~500 msgs) | **27.5 ms** | 1.28 s | **46.5×** |
 
-The gap is widest on small inputs, where Python's startup and import overhead dominate; even on large I/O-bound runs weavr stays ~18× ahead. Full methodology and the optimizations behind these numbers live in [agent_docs/weavr-bench-results.md](agent_docs/weavr-bench-results.md).
+Full methodology and optimization details in [agent_docs/weavr-bench-results.md](agent_docs/weavr-bench-results.md).
 
 ## Roadmap
 
 ### Done (v1.0)
 
-- [x] Single-session HTML export with full, rich tool rendering
+- [x] Single-session HTML export with rich tool rendering
 - [x] Markdown export with detail levels (`full`/`high`/`low`/`minimal`/`user-only`) + `--compact`
 - [x] Project hierarchy + master index + per-project combined pages
 - [x] SQLite cache for fast incremental rebuilds
@@ -309,33 +385,23 @@ The gap is widest on small inputs, where Python's startup and import overhead do
 - [x] Date-range filtering with natural language (`today`, `yesterday`, `last week`)
 - [x] Pagination for long sessions
 - [x] Self-contained output (zero external URLs, CI-enforced)
-- [x] Multi-channel install (brew, binstall, cargo, shell) + `self-update`
+- [x] Multi-channel install (brew, binstall, cargo) + `self-update`
+
+### Done (post-v1.0)
+
+- [x] **Per-project export** — `--project <name>` filters batch export to matching projects (case-insensitive partial match)
+- [x] **`--output-dir` with `-i`** — single-session shorthand now places output in the specified directory
+- [x] **Global `--open-browser`** — works with `export`, `-i`, and `--all-projects` (opens `index.html` in batch mode)
+- [x] **Improved CLI output** — colored progress (`✓` per project), elapsed time (`Took:`), `M`-notation for large token counts, aligned stats block consistent across all modes
 
 ### Planned
 
-- [ ] **Interactive TUI** — `--tui` currently exits with "coming in a later release"
+- [ ] **Interactive TUI** — terminal-based transcript browser
 - [ ] **Interactive timeline** — zoomable, time-grouped view of message activity
 - [ ] **Image rendering** — inline display of images embedded in transcripts
 - [ ] **JSON export** — `--format json` for programmatic consumption
 - [ ] **Windows support** — currently macOS and Linux only
 - [ ] **Cost estimation** — per-session API cost breakdown
-
-## Development
-
-```sh
-just ci          # fmt → clippy (-D warnings) → test
-just coverage    # run cargo-llvm-cov and print summary (CI gate: >= 80%)
-just bench       # run hyperfine benchmark vs claude-code-log
-just test        # cargo test only
-cargo build      # debug build
-cargo build --release
-```
-
-All CI gates are enforced via `just ci` plus the coverage gate in `.github/workflows/ci.yml`. The self-containment gate (`self_contained_output_no_external_urls`) runs as part of the integration test suite.
-
-## Related Projects
-
-- **[claude-code-log](https://github.com/daaain/claude-code-log)** — the original Python implementation; includes TUI, project hierarchy, timeline, and `uvx` quickstart
 
 ## License
 
