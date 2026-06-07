@@ -449,18 +449,6 @@ fn clear_cache_flag_works() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn tui_flag_exits_with_code_2() {
-    let mut cmd = Command::cargo_bin("weavr").unwrap();
-    cmd.args(["--tui"]);
-    let output = cmd.assert().code(2);
-    let stderr = String::from_utf8_lossy(&output.get_output().stderr);
-    assert!(
-        stderr.contains("coming in a later release"),
-        "should mention coming later, got: {stderr}"
-    );
-}
-
-#[test]
 fn from_date_rejects_invalid_input() {
     let fixture = std::env::current_dir().unwrap().join("tests/fixtures/session_linear.jsonl");
 
@@ -549,6 +537,103 @@ fn page_size_flag_is_accepted() {
         );
     }
     let _ = std::fs::remove_file(std::env::temp_dir().join("weavr-test-paginated.html"));
+}
+
+// ---------------------------------------------------------------------------
+// --project filter tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn project_filter_exact_name_exports_only_that_project() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "weavr-proj-exact-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
+    cmd.args([
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--project",
+        "my-app",
+        "--no-cache",
+    ]);
+    cmd.assert().success();
+
+    // Only my-app should be present.
+    assert!(
+        output_dir.join("my-app/combined_transcripts.html").exists(),
+        "my-app combined page must exist"
+    );
+    // other-app must not be present.
+    assert!(
+        !output_dir.join("other-app").exists(),
+        "other-app must be absent when filtering to my-app"
+    );
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn project_filter_partial_and_case_insensitive_match() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "weavr-proj-partial-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    // "OTHER" (uppercase) should still match "other-app".
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
+    cmd.args([
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--project",
+        "OTHER",
+        "--no-cache",
+    ]);
+    cmd.assert().success();
+
+    assert!(
+        output_dir.join("other-app/combined_transcripts.html").exists(),
+        "other-app combined page must exist"
+    );
+    assert!(!output_dir.join("my-app").exists(), "my-app must be absent");
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
+}
+
+#[test]
+fn project_filter_no_match_exits_with_error() {
+    let projects_dir = setup_fixture_projects_dir();
+    let output_dir = std::env::temp_dir().join(format!(
+        "weavr-proj-nomatch-{}-{}",
+        std::process::id(),
+        unique_test_id()
+    ));
+
+    let mut cmd = Command::cargo_bin("weavr").unwrap();
+    cmd.args([
+        "--projects-dir",
+        projects_dir.to_str().unwrap(),
+        "--output-dir",
+        output_dir.to_str().unwrap(),
+        "--project",
+        "nonexistent-project",
+        "--no-cache",
+    ]);
+    cmd.assert().failure();
+
+    fs::remove_dir_all(&projects_dir).ok();
+    fs::remove_dir_all(&output_dir).ok();
 }
 
 #[test]

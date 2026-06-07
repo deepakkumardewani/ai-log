@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use askama::Template;
 use clap::{Parser, Subcommand, ValueEnum};
@@ -45,6 +46,10 @@ pub struct Cli {
     #[arg(long)]
     pub session_id: Option<String>,
 
+    /// Export only the project whose name contains this string (case-insensitive).
+    #[arg(long)]
+    pub project: Option<String>,
+
     /// Wipe the output directory before writing.
     #[arg(long)]
     pub clear_output: bool,
@@ -67,18 +72,19 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub page_size: Option<usize>,
 
+    /// Open the exported file in the default browser (single-session mode).
+    #[arg(long, global = true)]
+    pub open_browser: bool,
+
     /// Enable verbose debug logging via tracing.
     #[arg(long, global = true)]
     pub debug: bool,
-
-    /// Interactive TUI mode (coming in a later release).
-    #[arg(long, global = true)]
-    pub tui: bool,
 }
 
 #[derive(Subcommand)]
 pub enum Command {
     /// Emit a stub transcript HTML file for design verification.
+    #[command(hide = true)]
     Stub {
         /// Output file path (default: weavr-stub.html in current dir).
         #[arg(short, long, default_value = "weavr-stub.html")]
@@ -129,12 +135,6 @@ pub enum Format {
 
 impl Cli {
     pub fn run(self) -> anyhow::Result<()> {
-        // --tui exits early with code 2.
-        if self.tui {
-            eprintln!("Error: --tui is coming in a later release.");
-            std::process::exit(2);
-        }
-
         // --debug enables tracing.
         if self.debug {
             tracing_subscriber::fmt()
@@ -174,13 +174,18 @@ impl Cli {
             None => {
                 // If --input is provided, treat as single export.
                 if let Some(ref input) = self.input {
+                    // If --output-dir is given, place the output file there.
+                    let output_in_dir: Option<String> = self.output_dir.as_ref().and_then(|dir| {
+                        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("session");
+                        dir.join(format!("{stem}.html")).to_str().map(|s| s.to_string())
+                    });
                     run_export(ExportConfig {
                         input,
-                        output: None,
+                        output: output_in_dir.as_deref(),
                         format: Format::Html,
                         detail: DetailLevel::Full,
                         compact: false,
-                        open_browser: false,
+                        open_browser: self.open_browser,
                         from_date: self.from_date.as_deref(),
                         to_date: self.to_date.as_deref(),
                         page_size: self.page_size,
@@ -222,6 +227,7 @@ struct ExportConfig<'a> {
 }
 
 fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
+    let t0 = Instant::now();
     let result = crate::parser::parse_file(cfg.input)?;
     if !result.warnings.is_empty() {
         for w in &result.warnings {
@@ -276,18 +282,24 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
                         let html = ctx.render()?;
                         std::fs::write(&filename, &html)?;
                         println!(
-                            "Exported page {}/{} to {filename} ({} messages)",
+                            "  {} page {}/{} {} {} messages",
+                            green("✓"),
                             page.number,
                             total,
+                            dim("·"),
                             page.message_range.len()
                         );
                     }
-                    println!("  Format: HTML (paginated, {total} pages)");
-                    println!("  Messages: {}", agg.message_count);
+                    println!();
+                    println!("  {}  HTML (paginated, {total} pages)", dim("Format:  "));
+                    println!("  {}  {}", dim("Messages:"), agg.message_count);
                     println!(
-                        "  Tokens: {} in / {} out",
-                        agg.total_input_tokens, agg.total_output_tokens
+                        "  {}  {} in / {} out",
+                        dim("Tokens:  "),
+                        fmt_tokens(agg.total_input_tokens),
+                        fmt_tokens(agg.total_output_tokens)
                     );
+                    println!("  {}  {}", dim("Took:    "), cyan(&fmt_elapsed(t0.elapsed())));
                     return Ok(());
                 }
             }
@@ -302,12 +314,17 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
             };
 
             std::fs::write(&output_path, &html)?;
-            println!("Exported to {output_path}");
-            println!("  Format: HTML");
-            println!("  Messages: {}", agg.message_count);
-            println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
-            let self_contained = !html.contains("http://") && !html.contains("https://");
-            println!("  Self-contained: {}", if self_contained { "yes" } else { "NO" });
+            println!("{} {} {}", bold("Exported"), dim("→"), bold(&output_path));
+            println!();
+            println!("  {}  HTML", dim("Format:  "));
+            println!("  {}  {}", dim("Messages:"), agg.message_count);
+            println!(
+                "  {}  {} in / {} out",
+                dim("Tokens:  "),
+                fmt_tokens(agg.total_input_tokens),
+                fmt_tokens(agg.total_output_tokens)
+            );
+            println!("  {}  {}", dim("Took:    "), cyan(&fmt_elapsed(t0.elapsed())));
 
             if cfg.open_browser {
                 let _ = std::process::Command::new("open").arg(&output_path).spawn();
@@ -331,12 +348,19 @@ fn run_export(cfg: ExportConfig<'_>) -> anyhow::Result<()> {
             };
 
             std::fs::write(&output_path, &md)?;
-            println!("Exported to {output_path}");
-            println!("  Format: Markdown");
-            println!("  Detail: {:?}", cfg.detail);
-            println!("  Compact: {}", if cfg.compact { "yes" } else { "no" });
-            println!("  Messages: {}", agg.message_count);
-            println!("  Tokens: {} in / {} out", agg.total_input_tokens, agg.total_output_tokens);
+            println!("{} {} {}", bold("Exported"), dim("→"), bold(&output_path));
+            println!();
+            println!("  {}  Markdown", dim("Format:  "));
+            println!("  {}  {:?}", dim("Detail:  "), cfg.detail);
+            println!("  {}  {}", dim("Compact: "), if cfg.compact { "yes" } else { "no" });
+            println!("  {}  {}", dim("Messages:"), agg.message_count);
+            println!(
+                "  {}  {} in / {} out",
+                dim("Tokens:  "),
+                fmt_tokens(agg.total_input_tokens),
+                fmt_tokens(agg.total_output_tokens)
+            );
+            println!("  {}  {}", dim("Took:    "), cyan(&fmt_elapsed(t0.elapsed())));
         }
     }
 
@@ -387,15 +411,36 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         projects = filter_by_session_id(projects, sid)?;
     }
 
+    // Filter by --project if provided.
+    if let Some(ref name) = cli.project {
+        projects = filter_by_project_name(projects, name)?;
+    }
+
     if projects.is_empty() {
         println!("No sessions found in {}", projects_dir.display());
         return Ok(());
     }
 
+    let t0 = Instant::now();
+    let total_sessions: usize = projects.iter().map(|p| p.sessions.len()).sum();
+    println!(
+        "{} {} {} {} {} {} {}",
+        bold("Exporting"),
+        cyan(&total_sessions.to_string()),
+        bold(&format!("session{}", if total_sessions == 1 { "" } else { "s" })),
+        dim("across"),
+        cyan(&projects.len().to_string()),
+        bold(&format!("project{}", if projects.len() == 1 { "" } else { "s" })),
+        dim(&format!("→ {}", output_dir.display()))
+    );
+    println!();
+
     let css = crate::assets::CSS.to_string();
     let mut all_project_data: Vec<IndexProjectData> = Vec::new();
     let mut global_messages: u32 = 0;
     let mut global_tokens: u64 = 0;
+    let mut global_input_tokens: u64 = 0;
+    let mut global_output_tokens: u64 = 0;
     let mut global_earliest: Option<String> = None;
     let mut global_latest: Option<String> = None;
     let mut total_exported: usize = 0;
@@ -410,6 +455,8 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         let mut session_datas: Vec<ProjectSessionData> = Vec::new();
         let mut project_messages: u32 = 0;
         let mut project_tokens: u64 = 0;
+        let mut project_input_tokens: u64 = 0;
+        let mut project_output_tokens: u64 = 0;
         let mut project_last_activity: Option<String> = None;
 
         for sf in &project.sessions {
@@ -532,7 +579,6 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                                 let html = ctx.render()?;
                                 fs::write(&page_path, &html)?;
                             }
-                            total_exported += 1;
                         }
                     } else {
                         let ctx = crate::render::html::build_context(
@@ -543,11 +589,11 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
                         );
                         let html = ctx.render()?;
                         fs::write(&session_html_path, &html)?;
-                        total_exported += 1;
                     }
                 }
             }
 
+            total_exported += 1;
             session_datas.push(ProjectSessionData {
                 id: sf.id.clone(),
                 title,
@@ -559,6 +605,8 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
 
             project_messages += msg_count;
             project_tokens += total_session_tokens;
+            project_input_tokens += input_tok;
+            project_output_tokens += output_tok;
 
             // Track per-project last activity.
             if let Some(ref ts) = last_ts {
@@ -589,6 +637,7 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         }
 
         // Per-project combined page.
+        let n = session_datas.len();
         let project_ctx = crate::render::project::build_context(
             css.clone(),
             project.name.clone(),
@@ -599,9 +648,10 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
         let combined_path = project_out.join("combined_transcripts.html");
         fs::write(&combined_path, &project_html)?;
         println!(
-            "  {}/combined_transcripts.html ({} sessions)",
-            project.name,
-            projects.iter().find(|p| p.name == project.name).map(|p| p.sessions.len()).unwrap_or(0)
+            "  {} {}  {}",
+            green("✓"),
+            bold(&display_name),
+            dim(&format!("{} session{}", n, if n == 1 { "" } else { "s" }))
         );
 
         all_project_data.push(IndexProjectData {
@@ -616,6 +666,8 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
 
         global_messages += project_messages;
         global_tokens += project_tokens;
+        global_input_tokens += project_input_tokens;
+        global_output_tokens += project_output_tokens;
     }
 
     // Master index.
@@ -629,15 +681,31 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
     );
     let index_html = index_ctx.render()?;
     fs::write(output_dir.join("index.html"), &index_html)?;
-    println!("  index.html");
+    println!("  {} {}", green("✓"), dim("index.html"));
+    println!();
 
     let mode = if cli.no_individual_sessions { "combined + index" } else { "full" };
     println!(
-        "Done: {} sessions exported ({} mode) to {}",
-        total_exported,
-        mode,
-        output_dir.display()
+        "{} {} session{}",
+        bold(&green("Done:")),
+        cyan(&total_exported.to_string()),
+        if total_exported == 1 { "" } else { "s" },
     );
+    println!();
+    println!("  {}  HTML ({mode})", dim("Format:  "));
+    println!("  {}  {}", dim("Messages:"), fmt_num(u64::from(global_messages)));
+    println!(
+        "  {}  {} in / {} out",
+        dim("Tokens:  "),
+        fmt_tokens(global_input_tokens),
+        fmt_tokens(global_output_tokens)
+    );
+    println!("  {}  {}", dim("Took:    "), cyan(&fmt_elapsed(t0.elapsed())));
+
+    if cli.open_browser {
+        let index_path = output_dir.join("index.html");
+        let _ = std::process::Command::new("open").arg(&index_path).spawn();
+    }
 
     Ok(())
 }
@@ -645,6 +713,26 @@ fn run_all_projects(cli: Cli) -> anyhow::Result<()> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Filter to projects whose name or display name contains `query` (case-insensitive).
+fn filter_by_project_name(
+    projects: Vec<crate::project::Project>,
+    query: &str,
+) -> anyhow::Result<Vec<crate::project::Project>> {
+    let q = query.to_lowercase();
+    let matching: Vec<crate::project::Project> = projects
+        .into_iter()
+        .filter(|p| {
+            p.name.to_lowercase().contains(&q) || p.display_name().to_lowercase().contains(&q)
+        })
+        .collect();
+
+    if matching.is_empty() {
+        anyhow::bail!("No project found matching \"{}\"", query);
+    }
+
+    Ok(matching)
+}
 
 /// Filter projects to only include the session matching `prefix`.
 fn filter_by_session_id(
@@ -762,6 +850,73 @@ fn cached_timestamps_match_date_range(
 fn project_name_short(name: &str, _path: &Path) -> String {
     // `name` is already the final path segment from `discover_projects`.
     name.to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Output helpers
+// ---------------------------------------------------------------------------
+
+fn is_tty() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal()
+}
+
+fn ansi(code: &str, s: &str) -> String {
+    if is_tty() {
+        format!("\x1b[{code}m{s}\x1b[0m")
+    } else {
+        s.to_string()
+    }
+}
+
+fn bold(s: &str) -> String {
+    ansi("1", s)
+}
+fn dim(s: &str) -> String {
+    ansi("2", s)
+}
+fn green(s: &str) -> String {
+    ansi("32", s)
+}
+fn cyan(s: &str) -> String {
+    ansi("36", s)
+}
+
+fn fmt_tokens(n: u64) -> String {
+    if n >= 1_000_000 {
+        let m = n as f64 / 1_000_000.0;
+        if m >= 10.0 {
+            format!("{m:.1}M")
+        } else {
+            format!("{m:.2}M")
+        }
+    } else {
+        fmt_num(n)
+    }
+}
+
+fn fmt_num(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, ch) in s.chars().rev().enumerate() {
+        if i > 0 && i % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out.chars().rev().collect()
+}
+
+fn fmt_elapsed(d: std::time::Duration) -> String {
+    let ms = d.as_millis();
+    if ms < 1_000 {
+        format!("{ms}ms")
+    } else if ms < 60_000 {
+        format!("{:.2}s", d.as_secs_f64())
+    } else {
+        let secs = d.as_secs();
+        format!("{}m {}s", secs / 60, secs % 60)
+    }
 }
 
 /// Extension trait to get end-of-day for a DateTime<Utc>.
