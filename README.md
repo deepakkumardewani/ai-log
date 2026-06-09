@@ -1,12 +1,23 @@
 # weavr
 
+[![CI](https://github.com/deepakkumardewani/weavr/actions/workflows/ci.yml/badge.svg)](https://github.com/deepakkumardewani/weavr/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/weavr.svg)](https://crates.io/crates/weavr)
+[![Crates.io Downloads](https://img.shields.io/crates/d/weavr.svg)](https://crates.io/crates/weavr)
+[![Rust](https://img.shields.io/badge/rust-1.80%2B-orange.svg)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![100% local](https://img.shields.io/badge/100%25%20local-no%20AI-brightgreen.svg)]()
+
 A fast, self-contained Rust CLI that converts Claude Code transcript JSONL files into beautiful HTML and Markdown.
 
 `weavr` is a Rust reimplementation of [claude-code-log](https://github.com/daaain/claude-code-log), focused on speed, zero-dependency output artefacts, and a clean Material 3 design.
 
+[![weavr in action](demo.gif)](demo.gif)
+160 sessions across 10 projects → fully navigable static site in **1.3 s**
+
 ## Navigation
 
 - [Why weavr?](#why-weavr)
+- [How it works](#how-it-works)
 - [Quickstart](#quickstart)
 - [Two modes](#two-modes)
 - [Key Features](#key-features)
@@ -34,44 +45,83 @@ Single static binary via `brew`, `cargo binstall`, or `cargo install`, with buil
 
 ### weavr vs. claude-code-log
 
-| | **weavr** (Rust) | **claude-code-log** (Python) |
-|---|---|---|
-| Speed (all projects) | **~1.3 s** | ~24 s |
-| Speed (single session) | **~28 ms** | ~1.3 s |
-| Distribution | single static binary (brew / binstall / cargo) | `uvx` / `pip` (needs Python) |
-| Self-contained output | ✅ zero external URLs (CI-enforced) | partial |
-| Incremental rebuilds | ✅ SQLite cache | ⚠️ re-renders each run |
-| Theme | Material 3 light/dark, dot-timeline | minimalist HTML |
-| HTML export | ✅ | ✅ |
-| Markdown export + detail levels + `--compact` | ✅ | ✅ |
-| Token usage tracking | ✅ | ✅ |
-| Date-range filtering (natural language) | ✅ | ✅ |
-| Client-side filter chips + in-page search | ✅ | ✅ (runtime filtering) |
-| Multi-project hierarchy + master index | ✅ | ✅ |
-| Self-update command | ✅ | — |
-| Interactive TUI | ⏳ planned | ✅ |
-| Interactive zoomable timeline | ⏳ planned | ✅ |
-| Image rendering | ⏳ planned | ✅ |
-| Windows | ⏳ planned | ✅ |
+|                                               | **weavr** (Rust)                               | **claude-code-log** (Python) |
+| --------------------------------------------- | ---------------------------------------------- | ---------------------------- |
+| Speed (all projects)                          | **~1.3 s**                                     | ~24 s                        |
+| Speed (single session)                        | **~28 ms**                                     | ~1.3 s                       |
+| Distribution                                  | single static binary (brew / binstall / cargo) | `uvx` / `pip` (needs Python) |
+| Self-contained output                         | ✅ zero external URLs (CI-enforced)            | partial                      |
+| Incremental rebuilds                          | ✅ SQLite cache                                | ⚠️ re-renders each run       |
+| Theme                                         | Material 3 light/dark, dot-timeline            | minimalist HTML              |
+| HTML export                                   | ✅                                             | ✅                           |
+| Markdown export + detail levels + `--compact` | ✅                                             | ✅                           |
+| Token usage tracking                          | ✅                                             | ✅                           |
+| Date-range filtering (natural language)       | ✅                                             | ✅                           |
+| Client-side filter chips + in-page search     | ✅                                             | ✅ (runtime filtering)       |
+| Multi-project hierarchy + master index        | ✅                                             | ✅                           |
+| Self-update command                           | ✅                                             | —                            |
 
 Both tools share the same JSONL input format. If you live in the terminal and want an interactive TUI today, claude-code-log is great. If you want the fastest possible export and offline-portable HTML, reach for weavr.
 
+## How it works
+
+```
+ ~/.claude/projects/
+   ├── my-project/session.jsonl          (Claude Code transcripts)
+   └── other-app/session.jsonl
+        │
+        ▼
+   ┌─────────────────────────────────────────────┐
+   │  weavr                                      │
+   │  ─────────────────────────────────────────  │
+   │  JSONL parser → session DAG → SQLite cache  │
+   │                     │                       │
+   │              HTML renderer                  │
+   │        (Material 3 · dot-timeline ·         │
+   │         tool cards · diffs · search)        │
+   └─────────────────────────────────────────────┘
+        │
+        ▼
+   weavr-out/
+   ├── index.html                        (master index, searchable)
+   ├── my-project/combined_transcripts.html
+   └── my-project/session.html           (fully self-contained)
+```
+
+Every output file is a **single portable HTML** — fonts, CSS, JS all embedded. No server, no CDN, no runtime. No AI involved — your transcripts never leave your machine.
+
 ## Quickstart
+
+**1. Install**
+
+```sh
+brew install deepakkumardewani/weavr/weavr
+# or: cargo binstall weavr
+# or: cargo install weavr
+```
+
+**2. Export a session**
 
 ```sh
 weavr -i ~/.claude/projects/my-project/session.jsonl
+# → writes session.html
 ```
 
-Writes a fully self-contained `session.html` — no CDN URLs, no external fonts, no JavaScript dependencies.
+**3. Export everything**
+
+```sh
+weavr --all-projects --open-browser
+# → walks ~/.claude/projects/, generates weavr-out/, opens index.html
+```
 
 ## Two modes
 
 weavr has two distinct operating modes:
 
-| Mode | Command | Produces |
-|------|---------|----------|
-| **Batch** | `weavr` / `weavr --all-projects` | HTML index + per-session + combined pages |
-| **Single-file** | `weavr export <INPUT>` | one file (HTML or Markdown) |
+| Mode            | Command                          | Produces                                  |
+| --------------- | -------------------------------- | ----------------------------------------- |
+| **Batch**       | `weavr` / `weavr --all-projects` | HTML index + per-session + combined pages |
+| **Single-file** | `weavr export <INPUT>`           | one file (HTML or Markdown)               |
 
 **Batch mode** walks `~/.claude/projects/` and generates a complete static site. It's HTML-only — no `--format` / `--detail` / `--compact` flags here.
 
@@ -95,6 +145,7 @@ The `-i` shorthand is a convenience alias for `export <INPUT>` (HTML only, full 
 - **SQLite Cache** — fast incremental rebuilds; `--clear-cache` / `--no-cache` for control
 - **Interactive HTML** — filter chips, in-page search (150ms debounce), theme toggle, project search, card/list view
 - **Zero-Config** — sensible defaults; point at a JSONL file and go
+- **100% Local** — pure offline tool; no AI used, no data sent anywhere, your transcripts stay on your machine
 
 ## Installation
 
@@ -124,10 +175,10 @@ Builds from source on crates.io. Requires Rust 1.80+.
 
 Prebuilt binaries are on the [GitHub Releases](https://github.com/deepakkumardewani/weavr/releases) page. Download the `.tar.gz` for your platform, extract, and place `weavr` on your `PATH`.
 
-| Platform | Target triple |
-|----------|--------------|
-| macOS (Apple Silicon) | `aarch64-apple-darwin` |
-| Linux (x86_64) | `x86_64-unknown-linux-gnu` |
+| Platform              | Target triple              |
+| --------------------- | -------------------------- |
+| macOS (Apple Silicon) | `aarch64-apple-darwin`     |
+| Linux (x86_64)        | `x86_64-unknown-linux-gnu` |
 
 > Intel macOS has no prebuilt binary — install via `cargo install weavr`, or run the Apple Silicon build under Rosetta 2.
 
@@ -216,13 +267,13 @@ weavr export session.jsonl --format md --detail minimal    # user + assistant te
 weavr export session.jsonl --format md --detail user-only  # user prompts only
 ```
 
-| Level | Includes |
-|-------|----------|
+| Level       | Includes                                                                |
+| ----------- | ----------------------------------------------------------------------- |
 | `user-only` | User prompts only — good input for an agent building a requirements doc |
-| `minimal` | User + assistant text |
-| `low` | + Key tool signals (WebSearch, WebFetch, Task delegations) |
-| `high` | + All tool calls; drops thinking blocks and system metadata |
-| `full` | Everything — thinking, system entries, all tool calls (default) |
+| `minimal`   | User + assistant text                                                   |
+| `low`       | + Key tool signals (WebSearch, WebFetch, Task delegations)              |
+| `high`      | + All tool calls; drops thinking blocks and system metadata             |
+| `full`      | Everything — thinking, system entries, all tool calls (default)         |
 
 **Feeding a past session to an LLM:**
 
@@ -364,11 +415,11 @@ weavr --debug --all-projects         # verbose logging for all-projects mode
 
 Benchmarked with [`hyperfine`](https://github.com/sharkdp/hyperfine) (warmup + multiple runs, no cache) on Apple Silicon against `claude-code-log` over the same input. Re-run any time with `just bench`.
 
-| Mode | weavr (Rust) | claude-code-log (Python) | Speedup |
-|------|--------------|--------------------------|---------|
-| All projects (160 sessions, 97 MB) | **1.32 s** | 24.10 s | **18.2×** |
-| Single project (42 sessions) | **466 ms** | 9.68 s | **20.8×** |
-| Single session (19 MB, ~500 msgs) | **27.5 ms** | 1.28 s | **46.5×** |
+| Mode                               | weavr (Rust) | claude-code-log (Python) | Speedup   |
+| ---------------------------------- | ------------ | ------------------------ | --------- |
+| All projects (160 sessions, 97 MB) | **1.32 s**   | 24.10 s                  | **18.2×** |
+| Single project (42 sessions)       | **466 ms**   | 9.68 s                   | **20.8×** |
+| Single session (19 MB, ~500 msgs)  | **27.5 ms**  | 1.28 s                   | **46.5×** |
 
 Full methodology and optimization details in [agent_docs/weavr-bench-results.md](agent_docs/weavr-bench-results.md).
 
@@ -402,6 +453,7 @@ Full methodology and optimization details in [agent_docs/weavr-bench-results.md]
 - [ ] **JSON export** — `--format json` for programmatic consumption
 - [ ] **Windows support** — currently macOS and Linux only
 - [ ] **Cost estimation** — per-session API cost breakdown
+- [ ] **Live HTML sharing** — deploy generated output to a hosted URL for one-click viewing and sharing in the browser
 
 ## License
 
