@@ -39,3 +39,5 @@ agent_docs/
 
 # VHS tape script (used to regenerate demo.gif, not needed in repo)
 demo.tape
+
+screenshots/
