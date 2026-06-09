@@ -210,7 +210,6 @@ cargo binstall --force weavr        # cargo-binstall
 ### Requirements
 
 - Rust 1.80+ (source builds only; prebuilt binaries have no dependencies)
-- Optional: Tailwind CLI (for rebuilding CSS tokens; a pre-built fallback is embedded)
 
 ## Usage
 
