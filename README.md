@@ -12,7 +12,6 @@ A fast, self-contained Rust CLI that converts Claude Code transcript JSONL files
 `weavr` is a Rust reimplementation of [claude-code-log](https://github.com/daaain/claude-code-log), focused on speed, zero-dependency output artefacts, and a clean Material 3 design.
 
 [![weavr in action](demo.gif)](demo.gif)
-160 sessions across 10 projects → fully navigable static site in **1.3 s**
 
 ## Navigation
 

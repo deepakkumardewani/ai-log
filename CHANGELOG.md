@@ -1,11 +1,30 @@
 # Changelog
 
+## [1.1.0] — 2026-06-12
+
+### Added
+
+- `--project <name>` flag for per-project export — filter transcripts to a single project directory
+
+### Changed
+
+- Removed `--tui` flag and hidden stub command (TUI was never shipped)
+- README overhauled: badges, demo GIF, How it works section, privacy callout
+- CSS asset renamed; Tailwind dependency removed
+
+### Fixed
+
+- `update-brew-formula.sh` correctly handles 2 shipped targets and version interpolation
+
+---
+
 ## [1.0.0] — 2026-06-06
 
 First public release. weavr is the renamed, hardened successor to the internal
 `cclog` prototype: a fast, self-contained Claude Code transcript exporter.
 
 ### Added
+
 - Renamed from `cclog` to `weavr` — binary, crate, output dir, cache, branding
 - `weavr self-update` command — update to the latest GitHub Release
 - Passive update notice on startup (throttled to once per 24 h, opt-out via `WEAVR_NO_UPDATE_CHECK`)
@@ -19,6 +38,7 @@ First public release. weavr is the renamed, hardened successor to the internal
 - Comprehensive test suite: 281 tests, 88% line coverage
 
 ### Changed
+
 - Default output directory: `cclog-out` → `weavr-out`
 - Cache database: `cclog-cache.db` → `weavr-cache.db`
 - Theme/localStorage keys: `cclog-theme` → `weavr-theme`
